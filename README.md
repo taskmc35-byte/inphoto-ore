@@ -11,7 +11,7 @@ Registro ore del team InPhoto Studio. Ogni persona ha il suo account e compila l
 | Aggiunge, rinomina e archivia clienti e progetti | ✓ | ✓ |
 | Elimina clienti e progetti mai usati | | ✓ |
 | Resoconto di tutto il team ed export Excel | | ✓ |
-| Crea account, reimposta password, disattiva persone | | ✓ |
+| Crea account, reimposta password, disattiva o elimina persone (le ore restano) | | ✓ |
 
 Le fasce segnate come **pranzo** non contano nelle ore né nei resoconti.
 

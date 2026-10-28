@@ -7,12 +7,13 @@ create schema if not exists private;
 
 -- ---------- Profili ----------
 create table public.profiles (
-  id          uuid primary key references auth.users (id) on delete cascade,
+  id          uuid primary key,  -- stesso id dell'account di accesso; resta anche se l'account viene eliminato
   full_name   text not null check (char_length(full_name) between 1 and 80),
   email       text not null,
   role        text not null default 'operatore' check (role in ('admin', 'operatore')),
   active      boolean not null default true,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  deleted_at  timestamptz            -- account eliminato: nome e ore restano nei resoconti
 );
 
 -- Funzioni di controllo usate dalle policy (schema privato, non esposto dalle API)

@@ -684,7 +684,7 @@ function presetRange(p) {
 function fillFilterSelects() {
   const u = $("fUser").value, c = $("fClient").value;
   $("fUser").innerHTML = '<option value="">Tutte le persone</option>' +
-    S.profiles.map(p => '<option value="' + p.id + '">' + esc(p.full_name) + (p.active ? "" : " (disattivato)") + '</option>').join("");
+    S.profiles.map(p => '<option value="' + p.id + '">' + esc(p.full_name) + (p.deleted_at ? " (eliminato)" : p.active ? "" : " (disattivato)") + '</option>').join("");
   $("fClient").innerHTML = '<option value="">Tutti i clienti</option><option value="none">Senza cliente</option>' +
     S.clients.map(x => '<option value="' + x.id + '">' + esc(x.name) + (x.archived ? " (archiviato)" : "") + '</option>').join("");
   $("fUser").value = u; $("fClient").value = c;
@@ -1075,7 +1075,7 @@ async function renderTeam() {
   const { data } = await sb.from("profiles").select("*").order("full_name");
   if (data) S.profiles = data;
   const box = $("ulist"); box.innerHTML = "";
-  S.profiles.forEach(p => {
+  S.profiles.filter(p => !p.deleted_at).forEach(p => {
     const r = document.createElement("div"); r.className = "urow" + (p.active ? "" : " off");
     const info = document.createElement("div");
     info.innerHTML = '<div class="uname"></div><div class="umail"></div>';
@@ -1095,7 +1095,17 @@ async function renderTeam() {
       if (p.active && !act.classList.contains("confirm")) { act.classList.add("confirm"); act.textContent = "Conferma"; setTimeout(() => { act.classList.remove("confirm"); act.textContent = "Disattiva"; }, 3000); return; }
       try { await callAdmin("update", { id: p.id, active: !p.active }); toast(p.active ? "Account disattivato" : "Account riattivato"); renderTeam(); } catch (e) { toast(e.message); }
     };
-    if (p.id === S.me.id) a.append(pw); else a.append(pw, role, act);
+    const del = document.createElement("button"); del.textContent = "Elimina"; del.className = "del";
+    del.title = "Cancella l'account. Le sue ore restano nei resoconti con il suo nome.";
+    del.onclick = async () => {
+      if (!del.classList.contains("confirm")) {
+        del.classList.add("confirm"); del.textContent = "Conferma: elimina " + p.full_name;
+        setTimeout(() => { del.classList.remove("confirm"); del.textContent = "Elimina"; }, 4000); return;
+      }
+      try { await callAdmin("delete", { id: p.id }); toast("Account eliminato. Le ore restano nei resoconti."); renderTeam(); R.ready && fillFilterSelects(); }
+      catch (e) { toast(e.message); }
+    };
+    if (p.id === S.me.id) a.append(pw); else a.append(pw, role, act, del);
     r.append(info, a); box.appendChild(r);
   });
 }

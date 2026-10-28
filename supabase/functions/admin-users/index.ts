@@ -120,6 +120,18 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    if (action === "delete") {
+      // Elimina l'account ma conserva profilo (nome) e ore nei resoconti
+      if (id === me.id) return fail("Non puoi eliminare il tuo account.");
+      if (target.role === "admin" && target.active && (await adminCount()) <= 1) return fail("Serve almeno un amministratore attivo.");
+      // prima si marca il profilo: se il database non è stato aggiornato (colonna mancante) ci si ferma qui, senza toccare le ore
+      const { error: mErr } = await admin.from("profiles").update({ active: false, deleted_at: new Date().toISOString() }).eq("id", id);
+      if (mErr) return fail("Il database non è pronto per l'eliminazione: esegui prima lo script SQL di aggiornamento.");
+      const { error: dErr } = await admin.auth.admin.deleteUser(id);
+      if (dErr && !/not.?found/i.test(dErr.message)) return fail("Non sono riuscito a eliminare l'account: " + dErr.message);
+      return json({ ok: true });
+    }
+
     if (action === "set_password") {
       if (!okPassword(body.password)) return fail("La password deve avere almeno 8 caratteri.");
       const { error } = await admin.auth.admin.updateUserById(id, { password: body.password as string });
