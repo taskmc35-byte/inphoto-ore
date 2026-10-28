@@ -497,7 +497,7 @@ function openRange() {
   cpSet($("rngCp"), "");
   $("rngTxt").value = ""; $("rngLunch").checked = false; $("rngMsg").hidden = true;
   resetRangeWarn(); rangeLen();
-  $("rng").hidden = false; $("rngFrom").focus();
+  $("rng").hidden = false;   // nessun campo attivo all'apertura: su iPhone aprirebbe subito la tendina
 }
 function resetRangeWarn() { rngConfirm = false; $("rngWarn").hidden = true; $("rngEmpty").hidden = true; $("rngOk").textContent = "Compila le fasce"; }
 function rangeBounds() { return [Number($("rngFrom").value), Number($("rngTo").value)]; }
