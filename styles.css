@@ -278,3 +278,25 @@ input.cp::placeholder { color:var(--muted); }
 .cpopt.new .m { color:var(--accent); }
 .cpopt.clear .m { color:var(--muted); font-weight:500; }
 .cpempty { padding:10px; color:var(--muted); font-size:14px; }
+/* telefono: periodo e persona su tutta la riga, così Dal/Al e Cliente/Progetto restano in coppia */
+@media (max-width:680px) {
+  .filters .frow:nth-child(1) > .field:first-child, .filters .frow:nth-child(2) > .field:first-child { flex-basis:100%; }
+}
+
+/* Filtri richiudibili: sul telefono partono chiusi e mostrano un riassunto */
+.filters > summary { list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.filters > summary::-webkit-details-marker { display:none; }
+.filters > summary .sum-t { font-family:var(--f-display); font-weight:700; font-size:15px; }
+.filters > summary .sum-t::after { content:" ▾"; color:var(--muted); font-size:12px; }
+.filters:not([open]) > summary .sum-t::after { content:" ▸"; }
+.filters > summary .sum-v { color:var(--muted); font-size:14px; }
+.filters[open] > summary { margin-bottom:2px; }
+/* Tabelle larghe: scorrono di lato dentro il riquadro, con la prima colonna sempre visibile */
+.matrix { width:max-content; min-width:100%; }
+.matrix th:first-child, .matrix td:first-child { position:sticky; left:0; z-index:1; background:var(--surface); min-width:170px; max-width:240px; box-shadow:1px 0 0 var(--line); }
+.matrix th:first-child { background:var(--soft); z-index:2; }
+.matrix tr.tot td:first-child { background:var(--surface); }
+.detail { min-width:720px; }
+.filters:not([open]) { padding-block:12px; gap:0; }
+.matrix { border-collapse:separate; border-spacing:0; }
+@media (max-width:680px) { .matrix th:first-child, .matrix td:first-child { min-width:140px; max-width:170px; } }

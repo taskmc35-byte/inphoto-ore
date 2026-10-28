@@ -672,6 +672,7 @@ function fillProjectFilter() {
 }
 function initReport() {
   if (R.ready) return; R.ready = true;
+  if (matchMedia("(max-width:680px)").matches) $("fBox").open = false;
   const [a, b] = presetRange("month"); $("fFrom").value = iso(a); $("fTo").value = iso(b);
   fillFilterSelects();
   $("fPreset").onchange = () => { const r = presetRange($("fPreset").value); if (r) { $("fFrom").value = iso(r[0]); $("fTo").value = iso(r[1]); } loadReport(); };
@@ -701,6 +702,13 @@ async function loadReport() {
     renderReport();
   } catch { if (seq === repSeq) $("repStatus").textContent = "Non riesco a caricare i dati. Controlla la connessione e riprova."; }
 }
+function updateFilterSummary() {
+  const parts = [$("fPreset").value === "custom" ? fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value) : $("fPreset").selectedOptions[0].text];
+  ["fUser", "fClient", "fProject"].forEach(id => { if ($(id).value) parts.push($(id).selectedOptions[0].text); });
+  if ($("fText").value.trim()) parts.push("“" + $("fText").value.trim() + "”");
+  parts.push("per " + DIM[$("fGroup").value].label + ($("fCross").value ? " × " + DIM[$("fCross").value].label : ""));
+  $("fSummary").textContent = parts.join(" · ");
+}
 function filteredRows() {
   const q = $("fText").value.trim().toLowerCase();
   return q ? R.rows.filter(r => (r.description || "").toLowerCase().includes(q)) : R.rows;
@@ -723,6 +731,7 @@ function groupBy(rows, dim) {
 }
 function renderReport() {
   const rows = filteredRows(), tot = rows.length * 0.5;
+  updateFilterSummary();
   $("rTot").textContent = fmtH(tot);
   $("rPeople").textContent = new Set(rows.map(r => r.user_id)).size;
   $("rClients").textContent = new Set(rows.filter(r => r.client_id).map(r => r.client_id)).size;
