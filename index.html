@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="it" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>InPhoto Ore</title>
+<meta name="description" content="Il registro ore del team InPhoto Studio: fasce da 30 minuti per cliente e progetto, resoconti ed export Excel.">
+<meta name="theme-color" content="#f5f5f6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="InPhoto Ore">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script>try{var t=localStorage.getItem("inphoto-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ Accesso ============ -->
+<main id="auth" class="auth" hidden>
+  <div class="auth-card">
+    <img class="auth-logo logo-light" src="assets/logo.png" alt="InPhoto Studio" width="600" height="756">
+    <img class="auth-logo logo-dark" src="assets/logo-dark.png" alt="InPhoto Studio" width="600" height="756">
+    <h1 class="auth-title">Registro ore</h1>
+
+    <form id="loginForm" class="form" hidden>
+      <label class="field"><span>Email</span><input id="loginEmail" type="email" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input id="loginPass" type="password" autocomplete="current-password" required></label>
+      <button class="btn acc big" type="submit" id="loginBtn">Accedi</button>
+      <p class="hint">Password dimenticata? Chiedi all'amministratore di impostarne una nuova.</p>
+    </form>
+
+    <form id="bootForm" class="form" hidden>
+      <p class="lead">Primo avvio: crea l'account amministratore. Potrai aggiungere il resto del team da Impostazioni → Team.</p>
+      <label class="field"><span>Nome e cognome</span><input id="bootName" autocomplete="name" required maxlength="80"></label>
+      <label class="field"><span>Email</span><input id="bootEmail" type="email" autocomplete="username" required></label>
+      <label class="field"><span>Password (almeno 8 caratteri)</span><input id="bootPass" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn acc big" type="submit" id="bootBtn">Crea amministratore</button>
+    </form>
+
+    <p class="msg err" id="authMsg" hidden></p>
+  </div>
+</main>
+
+<!-- ============ App ============ -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <img class="mark" src="assets/mark.png" alt="" width="52" height="80">
+      <div class="brand-txt"><span class="badge">INPHOTO</span><span class="brand-sub">Ore</span></div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Sezioni">
+      <button data-view="day" aria-pressed="true">Giorno</button>
+      <button data-view="sum" aria-pressed="false">Riepilogo</button>
+      <button data-view="rep" aria-pressed="false" data-admin hidden>Resoconto</button>
+      <button data-view="set" aria-pressed="false">Impostazioni</button>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+
+  <!-- ---------- Giorno ---------- -->
+  <section id="view-day" class="view">
+    <div class="sticky" id="dayStick">
+      <h1 class="date-title" id="dayTitle">—</h1>
+      <div class="nav">
+        <button class="iconbtn" id="prev" aria-label="Giorno precedente">‹</button>
+        <button class="btn" id="today">Oggi</button>
+        <button class="iconbtn" id="next" aria-label="Giorno successivo">›</button>
+        <input type="date" id="pick" aria-label="Scegli data">
+      </div>
+      <div class="week" id="week"></div>
+      <div class="daybar">
+        <span class="t">Lavorate <b id="dayHours">0 h</b><span id="lunchInfo"></span></span>
+        <span class="sync" id="sync"></span>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- ---------- Riepilogo personale ---------- -->
+  <section id="view-sum" class="view" hidden>
+    <div class="row-between">
+      <div class="seg" role="group" aria-label="Periodo">
+        <button id="sp-week" aria-pressed="true">Settimana</button>
+        <button id="sp-month" aria-pressed="false">Mese</button>
+      </div>
+      <div class="nav">
+        <button class="iconbtn" id="sprev" aria-label="Periodo precedente">‹</button>
+        <button class="iconbtn" id="snext" aria-label="Periodo successivo">›</button>
+      </div>
+    </div>
+    <h2 class="period" id="sumLabel"></h2>
+    <div class="kpis">
+      <div><span class="k">Ore lavorate</span><span class="v" id="sTot">0</span></div>
+      <div><span class="k">Con cliente</span><span class="v" id="sCli">0</span></div>
+      <div><span class="k">Giorni</span><span class="v" id="sDays">0</span></div>
+    </div>
+    <p class="label">Ore per cliente e progetto</p>
+    <div class="bars" id="sumBars"></div>
+  </section>
+
+  <!-- ---------- Resoconto (admin) ---------- -->
+  <section id="view-rep" class="view" hidden>
+    <div class="filters card">
+      <div class="frow">
+        <label class="field sm"><span>Periodo</span>
+          <select id="fPreset">
+            <option value="week">Questa settimana</option>
+            <option value="lastweek">Settimana scorsa</option>
+            <option value="month" selected>Questo mese</option>
+            <option value="lastmonth">Mese scorso</option>
+            <option value="year">Quest'anno</option>
+            <option value="custom">Date a scelta</option>
+          </select>
+        </label>
+        <label class="field sm"><span>Dal</span><input type="date" id="fFrom"></label>
+        <label class="field sm"><span>Al</span><input type="date" id="fTo"></label>
+      </div>
+      <div class="frow">
+        <label class="field sm"><span>Persona</span><select id="fUser"></select></label>
+        <label class="field sm"><span>Cliente</span><select id="fClient"></select></label>
+        <label class="field sm"><span>Progetto</span><select id="fProject"></select></label>
+      </div>
+      <div class="frow">
+        <label class="field sm grow"><span>Cerca nelle descrizioni</span><input id="fText" type="search" placeholder="es. shooting, post-produzione"></label>
+        <label class="field sm"><span>Raggruppa per</span>
+          <select id="fGroup">
+            <option value="client">Cliente</option>
+            <option value="project">Progetto</option>
+            <option value="user">Persona</option>
+            <option value="day">Giorno</option>
+            <option value="week">Settimana</option>
+            <option value="month">Mese</option>
+          </select>
+        </label>
+        <label class="field sm"><span>Incrocia con</span>
+          <select id="fCross">
+            <option value="">Nessuno</option>
+            <option value="user" selected>Persona</option>
+            <option value="client">Cliente</option>
+            <option value="project">Progetto</option>
+          </select>
+        </label>
+      </div>
+      <div class="frow actions">
+        <button class="btn" id="fReset">Azzera filtri</button>
+        <button class="btn acc" id="exportXlsx">Esporta Excel</button>
+      </div>
+    </div>
+
+    <p class="sync" id="repStatus"></p>
+    <div class="kpis">
+      <div><span class="k">Ore totali</span><span class="v" id="rTot">0</span></div>
+      <div><span class="k">Persone</span><span class="v" id="rPeople">0</span></div>
+      <div><span class="k">Clienti</span><span class="v" id="rClients">0</span></div>
+      <div><span class="k">Senza cliente</span><span class="v" id="rNone">0</span></div>
+    </div>
+
+    <p class="label" id="groupLabel">Ore per cliente</p>
+    <div class="bars" id="repBars"></div>
+
+    <div id="matrixWrap" hidden>
+      <p class="label" id="matrixLabel"></p>
+      <div class="tablewrap"><table class="matrix" id="matrix"></table></div>
+    </div>
+
+    <p class="label">Dettaglio lavorazioni</p>
+    <div class="tablewrap"><table class="detail" id="detail"></table></div>
+    <button class="btn" id="moreRows" hidden>Mostra altre righe</button>
+  </section>
+
+  <!-- ---------- Impostazioni ---------- -->
+  <section id="view-set" class="view" hidden>
+    <div class="subtabs seg" role="group" aria-label="Impostazioni">
+      <button data-sub="cp" aria-pressed="true">Clienti e progetti</button>
+      <button data-sub="team" aria-pressed="false" data-admin hidden>Team</button>
+      <button data-sub="acc" aria-pressed="false">Account</button>
+    </div>
+
+    <div id="sub-cp" class="sub">
+      <p class="note" id="cpNote"></p>
+      <form class="addrow" id="addClientForm">
+        <input id="newClient" placeholder="Nuovo cliente" maxlength="80" autocomplete="off" aria-label="Nome nuovo cliente">
+        <button class="btn acc" type="submit">Aggiungi cliente</button>
+      </form>
+      <label class="check"><input type="checkbox" id="showArchived"> Mostra archiviati</label>
+      <div class="clist" id="clist"></div>
+    </div>
+
+    <div id="sub-team" class="sub" hidden>
+      <form class="card form" id="addUserForm">
+        <h3>Nuovo account</h3>
+        <div class="frow">
+          <label class="field sm grow"><span>Nome e cognome</span><input id="uName" required maxlength="80" autocomplete="off"></label>
+          <label class="field sm grow"><span>Email</span><input id="uEmail" type="email" required autocomplete="off"></label>
+        </div>
+        <div class="frow">
+          <label class="field sm grow"><span>Password provvisoria</span><input id="uPass" required minlength="8" autocomplete="off"></label>
+          <label class="field sm"><span>Ruolo</span>
+            <select id="uRole"><option value="operatore">Operatore</option><option value="admin">Amministratore</option></select>
+          </label>
+        </div>
+        <div class="frow actions">
+          <button class="btn" type="button" id="uGen">Genera password</button>
+          <button class="btn acc" type="submit" id="uCreate">Crea account</button>
+        </div>
+      </form>
+      <div class="banner" id="credBox" hidden>
+        <div><b>Credenziali da consegnare</b><pre id="credTxt"></pre></div>
+        <button class="btn" id="credCopy">Copia</button>
+      </div>
+      <div class="ulist" id="ulist"></div>
+    </div>
+
+    <div id="sub-acc" class="sub" hidden>
+      <div class="card">
+        <h3 id="accName"></h3>
+        <p class="note" id="accInfo"></p>
+      </div>
+      <form class="card form" id="pwForm">
+        <h3>Cambia password</h3>
+        <label class="field"><span>Nuova password (almeno 8 caratteri)</span><input id="pw1" type="password" minlength="8" required autocomplete="new-password"></label>
+        <label class="field"><span>Ripeti la password</span><input id="pw2" type="password" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn acc" type="submit">Salva password</button>
+      </form>
+      <div class="card">
+        <h3>Aspetto</h3>
+        <div class="seg" role="group" aria-label="Tema">
+          <button id="thLight" aria-pressed="true">Chiaro</button>
+          <button id="thDark" aria-pressed="false">Scuro</button>
+        </div>
+      </div>
+      <button class="btn danger big" id="logout">Esci</button>
+    </div>
+  </section>
+</div>
+
+<!-- Finestra aggiungi cliente/progetto dal registro -->
+<div class="modal" id="qa" hidden>
+  <form class="modal-card form" id="qaForm">
+    <h3>Aggiungi cliente o progetto</h3>
+    <label class="field"><span>Cliente</span><select id="qaClient"></select></label>
+    <label class="field" id="qaNewClientWrap" hidden><span>Nome del nuovo cliente</span><input id="qaNewClient" maxlength="80" autocomplete="off"></label>
+    <label class="field"><span>Progetto (facoltativo)</span><input id="qaProject" maxlength="80" autocomplete="off" placeholder="es. Shooting catalogo autunno"></label>
+    <p class="msg err" id="qaMsg" hidden></p>
+    <div class="frow actions">
+      <button class="btn" type="button" id="qaCancel">Annulla</button>
+      <button class="btn acc" type="submit">Aggiungi e usa</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
