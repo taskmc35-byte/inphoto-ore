@@ -1,6 +1,6 @@
 // InPhoto Ore — service worker: apre l'app velocemente. I dati arrivano sempre da Supabase.
-const VERSION = "inphoto-ore-v1";
-const CORE = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
+const VERSION = "inphoto-ore-v2";
+const CORE = ["./", "index.html", "manifest.webmanifest",
   "assets/logo.png", "assets/logo-dark.png", "assets/mark.png", "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -14,7 +14,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   // File dell'app: prima la rete (versione più recente), se offline la copia salvata
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(r => r || caches.match("index.html"))));
