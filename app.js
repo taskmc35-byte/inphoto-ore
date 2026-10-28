@@ -688,7 +688,8 @@ function initReport() {
     $("fGroup").value = "client"; $("fCross").value = "user"; loadReport();
   };
   $("moreRows").onclick = () => { R.shown += 100; renderDetail(); };
-  $("exportXlsx").onclick = exportExcel;
+  $("exportXlsx").onclick = () => exportExcel("view");
+  $("exportFull").onclick = () => exportExcel("full");
 }
 let repSeq = 0;
 async function loadReport() {
@@ -794,71 +795,162 @@ function loadXlsx() {
     document.head.appendChild(s);
   }));
 }
-async function exportExcel() {
-  const btn = $("exportXlsx"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Preparo il file…";
+/* Costruttore di fogli: sezioni una sotto l'altra, con stili e formati per colonna */
+const XS = {
+  title: { font: { bold: true, sz: 15, color: { rgb: "CC2633" } } },
+  sub: { font: { italic: true, color: { rgb: "61646B" } } },
+  section: { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "191B1D" } } },
+  head: { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "CC2633" } }, alignment: { wrapText: true, vertical: "center" } },
+  total: { font: { bold: true }, fill: { fgColor: { rgb: "EEEEF0" } }, border: { top: { style: "thin", color: { rgb: "191B1D" } } } },
+  label: { font: { bold: true } },
+  kpi: { font: { bold: true, sz: 14 } },
+};
+function Sheet(name) { this.name = name; this.rows = []; this.st = []; this.fmt = []; this.filter = null; }
+Sheet.prototype.row = function (cells, style, fmts) {
+  const r = this.rows.length; this.rows.push(cells);
+  if (style) this.st.push([r, style, Math.max(cells.length, 1)]);
+  if (fmts) this.fmt.push([r, fmts]);
+  return r;
+};
+Sheet.prototype.gap = function () { this.rows.push([]); };
+Sheet.prototype.section = function (t) { this.row([t], "section"); };
+/* tabella: fmts per colonna = "h" ore, "p" percentuale, "d" data, "t" testo */
+Sheet.prototype.table = function (head, body, total, fmts, autoFilter) {
+  const h = this.row(head, "head");
+  body.forEach(b => this.row(b, null, fmts));
+  if (total) this.row(total, "total", fmts);
+  if (autoFilter && body.length) this.filter = { s: { r: h, c: 0 }, e: { r: h + body.length, c: head.length - 1 } };
+  this.gap();
+};
+Sheet.prototype.build = function (X) {
+  const ws = X.utils.aoa_to_sheet(this.rows, { cellDates: true });
+  const Z = { h: "0.0", p: "0%", d: "dd/mm/yyyy", n: "0" };
+  this.fmt.forEach(([r, f]) => f.forEach((k, c) => { const a = X.utils.encode_cell({ r, c }); if (ws[a] && Z[k] && ws[a].t !== "s") ws[a].z = Z[k]; }));
+  this.st.forEach(([r, k, n]) => { const width = k === "section" ? Math.max(n, this.maxCols()) : n;
+    for (let c = 0; c < width; c++) { const a = X.utils.encode_cell({ r, c }); if (!ws[a]) ws[a] = { t: "s", v: "" }; ws[a].s = XS[k]; } });
+  const w = [];
+  this.rows.forEach((row, r) => row.forEach((v, c) => {
+    if (this.st.some(([sr, k]) => sr === r && (k === "title" || k === "section" || k === "sub"))) return;
+    const len = v instanceof Date ? 10 : String(v ?? "").length; w[c] = Math.min(60, Math.max(w[c] || 8, len + 2));
+  }));
+  ws["!cols"] = w.map(x => ({ wch: x || 10 }));
+  if (this.filter) ws["!autofilter"] = { ref: X.utils.encode_range(this.filter) };
+  const ref = X.utils.decode_range(ws["!ref"] || "A1"); ref.e.c = Math.max(ref.e.c, this.maxCols() - 1); ws["!ref"] = X.utils.encode_range(ref);
+  return ws;
+};
+Sheet.prototype.maxCols = function () { return Math.max(1, ...this.rows.map(r => r.length)); };
+
+const pct = (h, tot) => tot ? h / tot : 0;
+const personName = id => profileById(id)?.full_name || "Utente rimosso";
+const projKey = r => r.project_id ? "p" + r.project_id : "c" + (r.client_id || 0);
+function blockRow(b) {
+  return [parse(b.day), GIORNI[parse(b.day).getDay()], personName(b.user_id), slotTime(b.startSlot), slotEnd(b.endSlot), b.hours,
+    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), b.description || ""];
+}
+const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Descrizione"];
+const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t"];
+function filterLines() {
+  return [
+    ["Periodo", fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value)],
+    ["Persona", $("fUser").value ? personName($("fUser").value) : "Tutte"],
+    ["Cliente", $("fClient").selectedOptions[0]?.text || "Tutti"],
+    ["Progetto", $("fProject").selectedOptions[0]?.text || "Tutti"],
+    ["Testo cercato", $("fText").value.trim() || "—"],
+  ];
+}
+function headerBlock(sh, title, rows) {
+  sh.row([title], "title");
+  sh.row(["Esportato il " + new Date().toLocaleString("it-IT")], "sub");
+  sh.gap();
+  filterLines().forEach(l => sh.row(l, null)); sh.st.push(...filterLines().map((_, i) => [3 + i, "label", 1]));
+  sh.gap();
+  const tot = rows.length * .5;
+  sh.row(["Ore totali", "Persone", "Clienti", "Progetti", "Senza cliente"], "head");
+  sh.row([tot, new Set(rows.map(r => r.user_id)).size, new Set(rows.filter(r => r.client_id).map(r => r.client_id)).size,
+    new Set(rows.filter(r => r.project_id).map(r => r.project_id)).size, rows.filter(r => !r.client_id).length * .5], "kpi", ["h", "n", "n", "n", "h"]);
+  sh.gap();
+}
+function groupTable(sh, rows, dim, title) {
+  const tot = rows.length * .5;
+  sh.section(title || "Ore per " + DIM[dim].label);
+  const body = groupBy(rows, dim).map(([k, h]) => [DIM[dim].name(k), h, pct(h, tot)]);
+  sh.table([cap(DIM[dim].label), "Ore", "%"], body, ["Totale", tot, 1], ["t", "h", "p"]);
+}
+function matrixTable(sh, rows, g, x, title) {
+  const rl = groupBy(rows, g), cl = groupBy(rows, x).map(c => c[0]), tot = rows.length * .5;
+  const cell = new Map(); rows.forEach(r => { const k = DIM[g].key(r) + "|" + DIM[x].key(r); cell.set(k, (cell.get(k) || 0) + .5); });
+  sh.section(title || cap(DIM[g].label) + " × " + DIM[x].label + " (ore)");
+  const body = rl.map(([k, t]) => [DIM[g].name(k), ...cl.map(c => cell.get(k + "|" + c) || null), t]);
+  const total = ["Totale", ...cl.map(c => rows.filter(r => DIM[x].key(r) === c).length * .5), tot];
+  sh.table([cap(DIM[g].label) + " \\ " + DIM[x].label, ...cl.map(c => DIM[x].name(c)), "Totale"], body, total, ["t", ...cl.map(() => "h"), "h"]);
+}
+function detailTable(sh, rows, title, filter) {
+  sh.section(title || "Dettaglio lavorazioni");
+  const blocks = toBlocks(rows);
+  sh.table(DET_HEAD, blocks.map(blockRow), ["Totale", "", "", "", "", rows.length * .5, "", "", ""], DET_FMT, filter);
+}
+function safeSheetName(name, used) {
+  let n = String(name).replace(/[\[\]:*?\/\\]/g, "-").trim() || "Foglio";
+  if (n.length > 31) n = n.slice(0, 30).trim() + "…";
+  let base = n, i = 2; while (used.has(n.toLowerCase())) { const suf = " (" + i++ + ")"; n = base.slice(0, 31 - suf.length) + suf; }
+  used.add(n.toLowerCase()); return n;
+}
+
+/* 1) Esattamente quello che si vede a schermo */
+function buildViewWorkbook(X, rows) {
+  const g = $("fGroup").value, x = $("fCross").value;
+  const sh = new Sheet("Vista");
+  headerBlock(sh, "Resoconto ore InPhoto Studio — vista a schermo", rows);
+  sh.row(["Raggruppato per " + DIM[g].label + (x && x !== g ? ", incrociato con " + DIM[x].label : "")], "sub"); sh.gap();
+  groupTable(sh, rows, g);
+  if (x && x !== g && rows.length) matrixTable(sh, rows, g, x);
+  detailTable(sh, rows, null, false);
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, sh.build(X), "Vista"); return wb;
+}
+
+/* 2) Resoconto completo: riepilogo, incroci, dettaglio, un foglio per persona e uno per progetto */
+function buildFullWorkbook(X, rows) {
+  const wb = X.utils.book_new(), used = new Set(), add = sh => X.utils.book_append_sheet(wb, sh.build(X), safeSheetName(sh.name, used));
+  const tot = rows.length * .5;
+
+  const r0 = new Sheet("Riepilogo");
+  headerBlock(r0, "Resoconto completo ore InPhoto Studio", rows);
+  groupTable(r0, rows, "user"); groupTable(r0, rows, "client"); groupTable(r0, rows, "project");
+  add(r0);
+
+  if (rows.length) {
+    const m1 = new Sheet("Persone x progetti"); matrixTable(m1, rows, "project", "user", "Ore per progetto e persona"); matrixTable(m1, rows, "client", "user", "Ore per cliente e persona"); add(m1);
+    const m2 = new Sheet("Giorni x persone"); matrixTable(m2, rows, "day", "user", "Ore per giorno e persona"); matrixTable(m2, rows, "week", "user", "Ore per settimana e persona"); add(m2);
+  }
+  const det = new Sheet("Dettaglio"); detailTable(det, rows, "Tutte le lavorazioni (usa i filtri delle colonne)", true); add(det);
+
+  // un foglio per ogni persona
+  groupBy(rows, "user").forEach(([uid, h]) => {
+    const rr = rows.filter(r => r.user_id === uid), sh = new Sheet(personName(uid));
+    sh.row([personName(uid)], "title"); sh.row([fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value) + " · " + fmtH(h) + " · " + Math.round(pct(h, tot) * 100) + "% del totale"], "sub"); sh.gap();
+    groupTable(sh, rr, "project", "Ore per progetto"); groupTable(sh, rr, "day", "Ore per giorno");
+    detailTable(sh, rr, "Dettaglio", true); add(sh);
+  });
+  // un foglio per ogni progetto (le ore sul cliente senza progetto vanno in "Cliente · generale")
+  groupBy(rows, "project").forEach(([k, h]) => {
+    const rr = rows.filter(r => projKey(r) === k), name = DIM.project.name(k);
+    const short = k === "c0" ? "Senza cliente" : k[0] === "p" ? projectName(Number(k.slice(1))) + " · " + clientName(projectById(Number(k.slice(1)))?.client_id) : clientName(Number(k.slice(1))) + " · generale";
+    const sh = new Sheet(short);
+    sh.row([name], "title"); sh.row([fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value) + " · " + fmtH(h) + " · " + Math.round(pct(h, tot) * 100) + "% del totale"], "sub"); sh.gap();
+    groupTable(sh, rr, "user", "Ore per persona"); groupTable(sh, rr, "day", "Ore per giorno");
+    detailTable(sh, rr, "Dettaglio", true); add(sh);
+  });
+  return wb;
+}
+
+async function exportExcel(kind) {
+  const btn = $(kind === "full" ? "exportFull" : "exportXlsx"); btn.disabled = true; const old = btn.textContent; btn.textContent = "Preparo il file…";
   try {
     await loadXlsx();
-    const X = window.XLSX, rows = filteredRows(), blocks = toBlocks(rows), tot = rows.length * .5;
-    const from = $("fFrom").value, to = $("fTo").value;
-    const head = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "CC2633" } }, alignment: { vertical: "center" } };
-    const totStyle = { font: { bold: true }, fill: { fgColor: { rgb: "EEEEF0" } } };
-    function sheet(aoa, widths, opts = {}) {
-      const ws = X.utils.aoa_to_sheet(aoa, { cellDates: true });
-      ws["!cols"] = widths.map(w => ({ wch: w }));
-      const rng = X.utils.decode_range(ws["!ref"]);
-      for (let c = rng.s.c; c <= rng.e.c; c++) {
-        const a = X.utils.encode_cell({ r: opts.headRow || 0, c }); if (ws[a]) ws[a].s = head;
-        if (opts.totalRow) { const t = X.utils.encode_cell({ r: rng.e.r, c }); if (ws[t]) ws[t].s = totStyle; }
-      }
-      for (let r = (opts.headRow || 0) + 1; r <= rng.e.r; r++) for (let c = rng.s.c; c <= rng.e.c; c++) {
-        const a = X.utils.encode_cell({ r, c }); if (!ws[a]) continue;
-        if (ws[a].t === "d") ws[a].z = "dd/mm/yyyy"; else if (typeof ws[a].v === "number") ws[a].z = "0.0";
-      }
-      ws["!freeze"] = { xSplit: 0, ySplit: (opts.headRow || 0) + 1 };
-      return ws;
-    }
-    const wb = X.utils.book_new();
-    const filt = [
-      ["Resoconto ore InPhoto Studio"], [],
-      ["Periodo", fmtDate(from) + " – " + fmtDate(to)],
-      ["Persona", $("fUser").value ? profileById($("fUser").value)?.full_name : "Tutte"],
-      ["Cliente", $("fClient").selectedOptions[0]?.text || "Tutti"],
-      ["Progetto", $("fProject").selectedOptions[0]?.text || "Tutti"],
-      ["Testo cercato", $("fText").value || "—"],
-      ["Ore totali", tot],
-      ["Esportato il", new Date().toLocaleString("it-IT")],
-    ];
-    const wsF = X.utils.aoa_to_sheet(filt); wsF["!cols"] = [{ wch: 18 }, { wch: 44 }];
-    wsF.A1.s = { font: { bold: true, sz: 14, color: { rgb: "CC2633" } } };
-    ["A3", "A4", "A5", "A6", "A7", "A8", "A9"].forEach(a => wsF[a].s = { font: { bold: true } });
-    X.utils.book_append_sheet(wb, wsF, "Filtri");
-
-    const det = [["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Descrizione"]];
-    blocks.forEach(b => det.push([parse(b.day), GIORNI[parse(b.day).getDay()], profileById(b.user_id)?.full_name || "", slotTime(b.startSlot), slotEnd(b.endSlot), b.hours, clientName(b.client_id), projectName(b.project_id), b.description || ""]));
-    det.push(["Totale", "", "", "", "", tot, "", "", ""]);
-    X.utils.book_append_sheet(wb, sheet(det, [11, 11, 22, 7, 7, 6, 24, 28, 60], { totalRow: true }), "Dettaglio");
-
-    const simple = (dim, title) => {
-      const a = [[cap(DIM[dim].label), "Ore", "%"]];
-      groupBy(rows, dim).forEach(([k, h]) => a.push([DIM[dim].name(k), h, tot ? Math.round(h / tot * 1000) / 10 : 0]));
-      a.push(["Totale", tot, 100]);
-      X.utils.book_append_sheet(wb, sheet(a, [40, 9, 7], { totalRow: true }), title);
-    };
-    simple("client", "Per cliente"); simple("project", "Per progetto"); simple("user", "Per persona");
-    { const a = [["Data", "Giorno", "Ore"]]; groupBy(rows, "day").forEach(([k, h]) => a.push([parse(k), GIORNI[parse(k).getDay()], h])); a.push(["Totale", "", tot]);
-      X.utils.book_append_sheet(wb, sheet(a, [12, 12, 9], { totalRow: true }), "Per giorno"); }
-
-    const matrix = (g, x, title) => {
-      const rl = groupBy(rows, g), cl = groupBy(rows, x).map(c => c[0]);
-      const cell = new Map(); rows.forEach(r => { const k = DIM[g].key(r) + "|" + DIM[x].key(r); cell.set(k, (cell.get(k) || 0) + .5); });
-      const a = [[cap(DIM[g].label) + " \\ " + DIM[x].label, ...cl.map(c => DIM[x].name(c)), "Totale"]];
-      rl.forEach(([k, t]) => a.push([DIM[g].name(k), ...cl.map(c => cell.get(k + "|" + c) || 0), t]));
-      a.push(["Totale", ...cl.map(c => rows.filter(r => DIM[x].key(r) === c).length * .5), tot]);
-      X.utils.book_append_sheet(wb, sheet(a, [36, ...cl.map(() => 14), 10], { totalRow: true }), title);
-    };
-    if (rows.length) { matrix("client", "user", "Cliente x persona"); matrix("project", "user", "Progetto x persona"); }
-
-    X.writeFile(wb, "resoconto-ore_" + from + "_" + to + ".xlsx");
+    const X = window.XLSX, rows = filteredRows();
+    if (!rows.length) throw new Error("Non ci sono ore da esportare con questi filtri.");
+    const wb = kind === "full" ? buildFullWorkbook(X, rows) : buildViewWorkbook(X, rows);
+    X.writeFile(wb, (kind === "full" ? "resoconto-completo_" : "resoconto-vista_") + $("fFrom").value + "_" + $("fTo").value + ".xlsx");
     toast("File Excel scaricato");
   } catch (e) { toast(e.message || "Esportazione non riuscita"); }
   btn.disabled = false; btn.textContent = old;
