@@ -82,7 +82,9 @@ create trigger entries_touch before update on public.entries
 -- ---------- Permessi ----------
 revoke all on public.profiles, public.clients, public.projects, public.entries from anon;
 grant select on public.profiles to authenticated;
-grant select, insert, update, delete on public.clients, public.projects, public.entries to authenticated;
+grant select, insert, delete on public.clients, public.projects to authenticated;
+grant update (name, archived) on public.clients, public.projects to authenticated;  -- solo nome e archiviazione
+grant select, insert, update, delete on public.entries to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.clients  enable row level security;
@@ -93,13 +95,13 @@ alter table public.entries  enable row level security;
 create policy "membri leggono il team" on public.profiles
   for select to authenticated using ((select private.is_member()));
 
--- Clienti e progetti: tutti i membri leggono e aggiungono; solo l'admin modifica ed elimina
+-- Clienti e progetti: tutti i membri leggono, aggiungono, rinominano e archiviano; solo l'admin elimina
 create policy "membri leggono clienti" on public.clients
   for select to authenticated using ((select private.is_member()));
 create policy "membri aggiungono clienti" on public.clients
   for insert to authenticated with check ((select private.is_member()) and created_by = (select auth.uid()));
-create policy "admin modifica clienti" on public.clients
-  for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
+create policy "membri modificano clienti" on public.clients
+  for update to authenticated using ((select private.is_member())) with check ((select private.is_member()));
 create policy "admin elimina clienti" on public.clients
   for delete to authenticated using ((select private.is_admin()));
 
@@ -107,8 +109,8 @@ create policy "membri leggono progetti" on public.projects
   for select to authenticated using ((select private.is_member()));
 create policy "membri aggiungono progetti" on public.projects
   for insert to authenticated with check ((select private.is_member()) and created_by = (select auth.uid()));
-create policy "admin modifica progetti" on public.projects
-  for update to authenticated using ((select private.is_admin())) with check ((select private.is_admin()));
+create policy "membri modificano progetti" on public.projects
+  for update to authenticated using ((select private.is_member())) with check ((select private.is_member()));
 create policy "admin elimina progetti" on public.projects
   for delete to authenticated using ((select private.is_admin()));
 

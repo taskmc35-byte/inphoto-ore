@@ -683,8 +683,8 @@ document.querySelectorAll(".subtabs button").forEach(b => b.onclick = () => show
 /* ---------- Clienti e progetti ---------- */
 function renderClients() {
   $("cpNote").textContent = isAdmin()
-    ? "Tutti possono aggiungere clienti e progetti. Tu puoi rinominarli, archiviarli (spariscono dai menu ma restano nei resoconti) o eliminarli se non sono mai stati usati."
-    : "Puoi aggiungere clienti e progetti. Per rinominarli o archiviarli chiedi all'amministratore.";
+    ? "Tutti possono aggiungere, rinominare e archiviare clienti e progetti: gli archiviati spariscono dai menu ma restano nei resoconti. Solo tu puoi eliminarli, e solo se non sono mai stati usati."
+    : "Puoi aggiungere, rinominare e archiviare clienti e progetti. Gli archiviati spariscono dai menu ma restano nei resoconti.";
   const showArch = $("showArchived").checked, box = $("clist"); box.innerHTML = "";
   const list = S.clients.filter(c => showArch || !c.archived);
   if (!list.length) { box.innerHTML = '<div class="empty">Ancora nessun cliente. Scrivi un nome qui sopra e premi “Aggiungi cliente”.</div>'; return; }
@@ -694,14 +694,14 @@ function renderClients() {
     const nm = document.createElement("span"); nm.className = "cname"; nm.textContent = c.name;
     if (c.archived) nm.insertAdjacentHTML("beforeend", ' <span class="tag">archiviato</span>');
     head.appendChild(nm);
-    if (isAdmin()) head.appendChild(adminActs("clients", c));
+    head.appendChild(itemActs("clients", c));
     el.appendChild(head);
     const pl = document.createElement("div"); pl.className = "plist";
     S.projects.filter(p => p.client_id === c.id && (showArch || !p.archived)).forEach(p => {
       const r = document.createElement("div"); r.className = "prow" + (p.archived ? " arch" : "");
       const pn = document.createElement("span"); pn.className = "pn"; pn.textContent = p.name;
       if (p.archived) pn.insertAdjacentHTML("beforeend", ' <span class="tag">archiviato</span>');
-      r.appendChild(pn); if (isAdmin()) r.appendChild(adminActs("projects", p));
+      r.appendChild(pn); r.appendChild(itemActs("projects", p));
       pl.appendChild(r);
     });
     el.appendChild(pl);
@@ -715,7 +715,7 @@ function renderClients() {
     box.appendChild(el);
   });
 }
-function adminActs(table, item) {
+function itemActs(table, item) {
   const a = document.createElement("span"); a.className = "acts";
   const ren = document.createElement("button"); ren.type = "button"; ren.textContent = "Rinomina";
   ren.onclick = () => {
@@ -748,7 +748,7 @@ function adminActs(table, item) {
     if (table === "clients") S.clients = S.clients.filter(x => x.id !== item.id); else S.projects = S.projects.filter(x => x.id !== item.id);
     renderClients(); toast("Eliminato");
   };
-  a.append(ren, arc, del); return a;
+  a.append(ren, arc); if (isAdmin()) a.append(del); return a;
 }
 $("showArchived").onchange = renderClients;
 $("addClientForm").addEventListener("submit", async e => {
