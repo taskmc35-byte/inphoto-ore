@@ -271,7 +271,7 @@ input.cp::placeholder { color:var(--muted); }
 .cpopt.proj::before { left:22px; width:7px; height:7px; border-radius:50%; top:15px; }
 .cpopt .m { font-weight:600; overflow-wrap:anywhere; }
 .cpopt .s { font-size:13px; color:var(--muted); }
-.cpopt mark { background:var(--accent-soft); color:inherit; border-radius:3px; padding:0 1px; }
+.cpopt mark { background:var(--accent-soft); color:inherit; border-radius:2px; padding:0; }
 .cpopt.act, .cpopt:hover { background:var(--soft); }
 .cpopt.cur .m::after { content:" ✓"; color:var(--accent); }
 .cpfoot { border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
@@ -329,3 +329,19 @@ input[type=date]::-webkit-calendar-picker-indicator { opacity:0; position:absolu
 .nav input[type=date] { min-height:42px; padding-block:9px; }
 input[type=date]::-webkit-date-and-time-value { line-height:22px; min-height:22px; }
 @media (max-width:680px) { #fReset { order:3; flex-basis:100%; } #exportFull, #exportXlsx { flex:1 1 calc(50% - 5px); padding:0 8px; } }
+
+/* Pannello di scelta cliente/progetto sul telefono */
+.cpsheet { position:fixed; inset:0; z-index:70; background:rgb(0 0 0 / .45); display:flex; align-items:flex-end; }
+.cpsheet-card { background:var(--surface); width:100%; max-height:min(80vh, 640px); height:80vh; border-radius:18px 18px 0 0; display:flex; flex-direction:column;
+  padding:14px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px)); gap:10px; }
+.cpsheet-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.cpsheet-head b { font-family:var(--f-display); font-size:17px; }
+#cpSearch { border:1px solid var(--line); background:var(--bg); border-radius:var(--radius); height:46px; padding:0 14px; font-size:16px; width:100%; -webkit-appearance:none; appearance:none; }
+#cpSearch:focus { border-color:var(--accent); outline:none; }
+.cpsheet-list { overflow:auto; flex:1; min-height:0; overscroll-behavior:contain; margin:0 -6px; padding:0 6px; }
+.cpsheet-list .cpopt { padding-top:11px; padding-bottom:11px; }
+.cpsheet-list .cpopt::before { top:17px; }
+.cpsheet-list .cpopt.proj::before { top:18px; }
+body.noscroll { overflow:hidden; }
+/* Su iPhone un campo sotto i 16px fa zoomare la pagina quando lo tocchi */
+@media (max-width:680px) { input, select, textarea { font-size:16px !important; } }

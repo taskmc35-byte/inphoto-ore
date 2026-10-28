@@ -193,11 +193,29 @@ const CP = { input: null, onPick: null, opts: [], idx: -1 };
 const cpList = document.createElement("div");
 cpList.className = "cplist"; cpList.id = "cpList"; cpList.setAttribute("role", "listbox"); cpList.hidden = true;
 document.body.appendChild(cpList);
+/* Sul telefono la scelta si apre in un pannello dal basso: niente tastiera finché non la chiedi, niente elenchi che saltano */
+const cpSheet = document.createElement("div");
+cpSheet.className = "cpsheet"; cpSheet.hidden = true;
+cpSheet.innerHTML = '<div class="cpsheet-card" role="dialog" aria-label="Scegli cliente e progetto">' +
+  '<div class="cpsheet-head"><b>Cliente e progetto</b><button type="button" class="btn sm" id="cpSheetClose">Chiudi</button></div>' +
+  '<input id="cpSearch" type="search" placeholder="Cerca cliente o progetto" autocomplete="off" spellcheck="false" enterkeyhint="done">' +
+  '<div class="cpsheet-list" id="cpSheetList" role="listbox"></div></div>';
+document.body.appendChild(cpSheet);
+const cpSheetList = cpSheet.querySelector("#cpSheetList"), cpSearch = cpSheet.querySelector("#cpSearch");
+const isTouch = () => matchMedia("(max-width:680px), (pointer:coarse)").matches;
+CP.box = cpList;
+function cpOpenSheet(input, onPick) {
+  CP.input = input; CP.onPick = onPick; CP.box = cpSheetList;
+  cpSearch.value = ""; cpSheet.hidden = false; document.body.classList.add("noscroll");
+  cpRender(""); cpSheetList.scrollTop = 0;
+}
 function cpAttach(input, onPick) {
   input.setAttribute("role", "combobox"); input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-controls", "cpList");
   input.autocomplete = "off"; input.spellcheck = false;
-  input.addEventListener("focus", () => { CP.input = input; CP.onPick = onPick; requestAnimationFrame(() => input.select()); cpRender(""); });
-  input.addEventListener("input", () => { if (CP.input === input) cpRender(input.value); });
+  if (isTouch()) { input.readOnly = true; input.setAttribute("inputmode", "none"); }
+  input.addEventListener("click", () => { if (isTouch()) { input.blur(); cpOpenSheet(input, onPick); } });
+  input.addEventListener("focus", () => { if (isTouch()) return; CP.input = input; CP.onPick = onPick; CP.box = cpList; requestAnimationFrame(() => input.select()); cpRender(""); });
+  input.addEventListener("input", () => { if (CP.input === input && !isTouch()) cpRender(input.value); });
   input.addEventListener("keydown", e => {
     if (cpList.hidden) { if (e.key === "ArrowDown") cpRender(""); return; }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); cpMove(e.key === "ArrowDown" ? 1 : -1); }
@@ -238,14 +256,15 @@ function cpRender(q) {
   if (cur) h += opt("", "Nessun cliente", "", null, "clear");
   h += opt("__new:" + qq, typed ? "+ Crea “" + esc(qq) + "”" : "+ Nuovo cliente o progetto", "", null, "new");
   h += "</div>";
-  cpList.innerHTML = h; CP.opts = opts;
+  CP.box.innerHTML = h; CP.opts = opts;
   CP.idx = typed ? (list.length ? opts.indexOf(list[0].v) : opts.length - 1) : -1;
-  cpPaintIdx(); cpList.hidden = false; cpPosition();
+  cpPaintIdx();
+  if (CP.box === cpList) { cpList.hidden = false; cpPosition(); }
 }
 function cpMove(d) { const n = CP.opts.length; CP.idx = (CP.idx + d + n) % n; cpPaintIdx(true); }
 function cpPaintIdx(scroll) {
-  cpList.querySelectorAll(".cpopt").forEach(el => el.classList.toggle("act", Number(el.dataset.i) === CP.idx));
-  const a = cpList.querySelector(".cpopt.act"); if (a && scroll) a.scrollIntoView({ block: "nearest" });
+  CP.box.querySelectorAll(".cpopt").forEach(el => el.classList.toggle("act", Number(el.dataset.i) === CP.idx));
+  const a = CP.box.querySelector(".cpopt.act"); if (a && scroll) a.scrollIntoView({ block: "nearest" });
 }
 function cpPosition() {
   if (!CP.input || cpList.hidden) return;
@@ -262,6 +281,7 @@ function cpPosition() {
 }
 function cpClose(restore) {
   cpList.hidden = true;
+  if (!cpSheet.hidden) { cpSheet.hidden = true; document.body.classList.remove("noscroll"); cpSearch.blur(); }
   if (restore && CP.input) CP.input.value = cpLabel(CP.input.dataset.v);
   CP.input = null; CP.onPick = null;
 }
@@ -273,6 +293,14 @@ function cpChoose(v) {
 }
 cpList.addEventListener("pointerdown", e => e.preventDefault());   // non perdere il focus mentre si sceglie
 cpList.addEventListener("click", e => { const o = e.target.closest(".cpopt"); if (o) cpChoose(CP.opts[Number(o.dataset.i)]); });
+cpSheetList.addEventListener("click", e => { const o = e.target.closest(".cpopt"); if (o) cpChoose(CP.opts[Number(o.dataset.i)]); });
+cpSearch.addEventListener("input", () => { if (CP.input) cpRender(cpSearch.value); });
+cpSearch.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); if (CP.idx >= 0) cpChoose(CP.opts[CP.idx]); else cpSearch.blur(); }
+  else if (e.key === "Escape") cpClose(true);
+});
+cpSheet.querySelector("#cpSheetClose").onclick = () => cpClose(true);
+cpSheet.addEventListener("click", e => { if (e.target === cpSheet) cpClose(true); });
 document.addEventListener("pointerdown", e => { if (!cpList.hidden && e.target !== CP.input && !cpList.contains(e.target)) cpClose(true); });
 addEventListener("scroll", () => cpPosition(), true);
 addEventListener("resize", () => cpPosition());
