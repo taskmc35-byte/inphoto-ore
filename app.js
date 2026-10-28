@@ -157,7 +157,7 @@ const projectName = id => id ? (projectById(id)?.name || "—") : "";
 
 /* opzioni del menu Cliente/Progetto di una fascia */
 function cpOptions(selClient, selProject) {
-  let h = '<option value="">— cliente / progetto —</option>';
+  let h = '<option value="">Cliente / progetto</option>';
   S.clients.forEach(c => {
     const projs = S.projects.filter(p => p.client_id === c.id && (!p.archived || p.id === selProject));
     if (c.archived && c.id !== selClient) return;

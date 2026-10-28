@@ -237,3 +237,11 @@ tr:last-child td { border-bottom:0; }
 }
 @media (prefers-reduced-motion:no-preference) { .bar .tr i { transition:width .3s ease; } }
 @media (max-width:380px) { .tabs button { font-size:13px; } .seg button { padding:9px 10px; } }
+/* Filtri del resoconto compatti sul telefono: due campi per riga */
+@media (max-width:680px) {
+  .filters { padding:12px; gap:10px; }
+  .filters .frow { gap:8px; }
+  .filters .frow > .field { flex:1 1 calc(50% - 4px); }
+  .filters .frow > .grow { flex:1 1 100%; }
+  .filters .frow.actions > .btn { flex:1; }
+}
