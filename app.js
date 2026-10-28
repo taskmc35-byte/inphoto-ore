@@ -291,7 +291,7 @@ function scrollToStart() {
   requestAnimationFrame(() => {
     const n = new Date(), s = iso(S.cur) === iso(n) ? n.getHours() * 2 + (n.getMinutes() >= 30 ? 1 : 0) : 18;
     const row = $("grid").children[s]; if (!row) return;
-    const off = $("dayStick").getBoundingClientRect().height + 8;
+    const st = $("dayStick"), off = (parseFloat(getComputedStyle(st).top) || 0) + st.getBoundingClientRect().height + 8;
     window.scrollTo({ top: Math.max(0, row.getBoundingClientRect().top + scrollY - off), behavior: "auto" });
   });
 }
@@ -834,6 +834,11 @@ document.addEventListener("visibilitychange", async () => {
   await loadLookups();
   if (S.view === "day") { S.loadedWeeks.clear(); await loadWeek(S.cur); renderDay(); }
 });
+
+/* altezza della testata fissa, per far fermare la data subito sotto */
+const topbar = document.querySelector(".topbar");
+const setTopbarH = () => document.documentElement.style.setProperty("--topbar-h", (getComputedStyle(topbar).position === "sticky" ? topbar.offsetHeight : 0) + "px");
+if (window.ResizeObserver) new ResizeObserver(setTopbarH).observe(topbar); addEventListener("resize", setTopbarH);
 
 if ("serviceWorker" in navigator && location.protocol === "https:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 

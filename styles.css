@@ -78,7 +78,9 @@ h3 { font-size:17px; font-weight:700; }
 
 /* ---------- Testata ---------- */
 #app { max-width:860px; margin:0 auto; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); padding-block:14px 48px; }
-.topbar { display:flex; align-items:center; gap:16px; justify-content:space-between; flex-wrap:wrap; margin-bottom:14px; }
+/* Su computer la testata con le sezioni resta sempre in alto; la data del giorno si ferma subito sotto */
+.topbar { display:flex; align-items:center; gap:16px; justify-content:space-between; flex-wrap:wrap; margin:-14px 0 8px; padding:12px 0 10px;
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:20; background:var(--bg); border-bottom:1px solid var(--line); }
 .brand { display:flex; align-items:center; gap:10px; }
 .mark { width:auto; height:40px; }
 :root[data-theme="dark"] .mark { filter:drop-shadow(0 0 0 transparent); background:#f0f1f3; border-radius:8px; padding:3px 5px; height:42px; }
@@ -93,7 +95,7 @@ h3 { font-size:17px; font-weight:700; }
 .view > * { min-width:0; }
 
 /* ---------- Giorno ---------- */
-.sticky { position:sticky; top:env(safe-area-inset-top,0px); z-index:10; background:var(--bg); display:flex; flex-direction:column; gap:10px; padding-top:6px; }
+.sticky { position:sticky; top:calc(env(safe-area-inset-top,0px) + var(--topbar-h,0px)); z-index:10; background:var(--bg); display:flex; flex-direction:column; gap:10px; padding-top:6px; }
 .date-title { font-size:clamp(22px,5vw,30px); font-weight:800; letter-spacing:-.01em; }
 .date-title .y { color:var(--muted); font-weight:600; }
 .nav { display:flex; gap:8px; align-items:center; }
@@ -212,7 +214,7 @@ tr:last-child td { border-bottom:0; }
 /* ---------- Telefono ---------- */
 @media (max-width:680px) {
   #app { padding-block:8px calc(86px + env(safe-area-inset-bottom,0px)); }
-  .topbar { margin-bottom:6px; }
+  .topbar { position:static; margin:0 0 6px; padding:0; border-bottom:0; }
   .who { display:none; }
   .mark { height:32px; }
   :root[data-theme="dark"] .mark { height:34px; }
@@ -220,7 +222,7 @@ tr:last-child td { border-bottom:0; }
     padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px)); }
   .tabs button { flex:1; min-width:0; height:48px; padding:0 4px; font-size:14px; }
   .tabs button[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent); box-shadow:none; }
-  .sticky { margin-inline:-16px; padding:6px 16px 0; }
+  .sticky { top:env(safe-area-inset-top,0px); margin-inline:-16px; padding:6px 16px 0; }
   body::before { content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); z-index:11; background:var(--bg); }
   .wd .d { font-size:16px; }
   .wd .n, .wd .h { font-size:10px; letter-spacing:0; }
