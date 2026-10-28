@@ -155,20 +155,129 @@ const chip = clientId => {
 const clientName = id => id ? (clientById(id)?.name || "Cliente eliminato") : "Senza cliente";
 const projectName = id => id ? (projectById(id)?.name || "—") : "";
 
-/* opzioni del menu Cliente/Progetto di una fascia */
-function cpOptions(selClient, selProject) {
-  let h = '<option value="">Cliente / progetto</option>';
-  S.clients.forEach(c => {
-    const projs = S.projects.filter(p => p.client_id === c.id && (!p.archived || p.id === selProject));
-    if (c.archived && c.id !== selClient) return;
-    h += '<optgroup label="' + esc(c.name) + '">';
-    h += '<option value="c:' + c.id + '">' + esc(c.name) + (projs.length ? " · generale" : "") + '</option>';
-    projs.forEach(p => { h += '<option value="p:' + p.id + '">' + esc(c.name) + " › " + esc(p.name) + '</option>'; });
-    h += '</optgroup>';
-  });
-  h += '<option value="__new">+ Aggiungi cliente o progetto…</option>';
-  return h;
+/* ---------- Scelta cliente/progetto con ricerca ----------
+   Valori: "" (nessuno), "c:ID" (cliente, tutto il cliente), "p:ID" (progetto). */
+const norm = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+function cpLabel(v) {
+  if (!v) return "";
+  const [k, id] = v.split(":"), n = Number(id);
+  if (k === "c") return clientName(n);
+  const p = projectById(n); return p ? clientName(p.client_id) + " › " + p.name : "";
 }
+function cpClient(v) { if (!v) return null; const [k, id] = v.split(":"); return k === "c" ? Number(id) : (projectById(Number(id))?.client_id ?? null); }
+function cpMatches(q, current) {
+  const nq = norm(q), out = [];
+  const clients = [...S.clients].sort((a, b) => (nq && norm(b.name).startsWith(nq)) - (nq && norm(a.name).startsWith(nq)));
+  clients.forEach(c => {
+    if (c.archived && cpClient(current) !== c.id) return;
+    const projs = S.projects.filter(p => p.client_id === c.id && (!p.archived || "p:" + p.id === current));
+    const cm = !nq || norm(c.name).includes(nq);
+    const pm = projs.filter(p => cm || norm(p.name).includes(nq) || norm(c.name + " " + p.name).includes(nq));
+    if (cm) out.push({ v: "c:" + c.id, main: c.name, sub: projs.length ? "tutto il cliente" : "", cid: c.id });
+    pm.forEach(p => out.push({ v: "p:" + p.id, main: p.name, sub: c.name, cid: c.id, proj: true }));
+  });
+  return out;
+}
+/* ultimi clienti/progetti usati nella settimana caricata, dal più recente */
+function cpRecent() {
+  const seen = new Set(), out = [];
+  Object.keys(S.days).sort().reverse().forEach(d => {
+    Object.keys(S.days[d]).map(Number).sort((a, b) => b - a).forEach(sl => {
+      const v = cpValue(S.days[d][sl]);
+      if (v && !seen.has(v) && cpLabel(v) && !(clientById(cpClient(v))?.archived)) { seen.add(v); out.push(v); }
+    });
+  });
+  return out.slice(0, 5);
+}
+const CP = { input: null, onPick: null, opts: [], idx: -1 };
+const cpList = document.createElement("div");
+cpList.className = "cplist"; cpList.id = "cpList"; cpList.setAttribute("role", "listbox"); cpList.hidden = true;
+document.body.appendChild(cpList);
+function cpAttach(input, onPick) {
+  input.setAttribute("role", "combobox"); input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-controls", "cpList");
+  input.autocomplete = "off"; input.spellcheck = false;
+  input.addEventListener("focus", () => { CP.input = input; CP.onPick = onPick; requestAnimationFrame(() => input.select()); cpRender(""); });
+  input.addEventListener("input", () => { if (CP.input === input) cpRender(input.value); });
+  input.addEventListener("keydown", e => {
+    if (cpList.hidden) { if (e.key === "ArrowDown") cpRender(""); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); cpMove(e.key === "ArrowDown" ? 1 : -1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (CP.idx >= 0) cpChoose(CP.opts[CP.idx]); }
+    else if (e.key === "Escape") { e.preventDefault(); cpClose(true); input.blur(); }
+    else if (e.key === "Tab") cpClose(true);
+  });
+}
+function cpSet(input, v) {
+  input.dataset.v = v || ""; input.value = cpLabel(v);
+  const cid = cpClient(v);
+  input.classList.toggle("set", !!cid);
+  input.style.setProperty("--chip", cid ? chip(cid) : "var(--line)");
+}
+function cpRender(q) {
+  const cur = CP.input.dataset.v || "", qq = q.trim();
+  let h = "", opts = [];
+  const opt = (v, main, sub, cid, cls) => {
+    opts.push(v);
+    return '<div class="cpopt' + (cls ? " " + cls : "") + (v === cur ? " cur" : "") + '" role="option" data-i="' + (opts.length - 1) + '"' + (cid ? ' style="--chip:' + chip(cid) + '"' : "") + '>' +
+      '<span class="m">' + main + '</span>' + (sub ? '<span class="s">' + sub + '</span>' : "") + '</div>';
+  };
+  const typed = qq && qq !== cpLabel(cur);
+  const list = cpMatches(typed ? qq : "", cur);
+  if (!typed) {
+    const rec = cpRecent();
+    if (rec.length) {
+      h += '<div class="cphead">Usati di recente</div>';
+      rec.forEach(v => { const [k] = v.split(":"); const p = k === "p" ? projectById(Number(v.slice(2))) : null;
+        h += opt(v, esc(p ? p.name : clientName(Number(v.slice(2)))), esc(p ? clientName(p.client_id) : "tutto il cliente"), cpClient(v), p ? "proj" : ""); });
+      h += '<div class="cphead">Tutti</div>';
+    }
+  }
+  const hl = t => { if (!typed) return esc(t); const i = norm(t).indexOf(norm(qq)); return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + qq.length)) + "</mark>" + esc(t.slice(i + qq.length)); };
+  list.forEach(o => { h += opt(o.v, hl(o.main), o.proj ? hl(o.sub) : esc(o.sub), o.cid, o.proj ? "proj" : "cli"); });
+  if (typed && !list.length) h += '<div class="cpempty">Nessun cliente o progetto contiene “' + esc(qq) + '”.</div>';
+  h += '<div class="cpfoot">';
+  if (cur) h += opt("", "Nessun cliente", "", null, "clear");
+  h += opt("__new:" + qq, typed ? "+ Crea “" + esc(qq) + "”" : "+ Nuovo cliente o progetto", "", null, "new");
+  h += "</div>";
+  cpList.innerHTML = h; CP.opts = opts;
+  CP.idx = typed ? (list.length ? opts.indexOf(list[0].v) : opts.length - 1) : -1;
+  cpPaintIdx(); cpList.hidden = false; cpPosition();
+}
+function cpMove(d) { const n = CP.opts.length; CP.idx = (CP.idx + d + n) % n; cpPaintIdx(true); }
+function cpPaintIdx(scroll) {
+  cpList.querySelectorAll(".cpopt").forEach(el => el.classList.toggle("act", Number(el.dataset.i) === CP.idx));
+  const a = cpList.querySelector(".cpopt.act"); if (a && scroll) a.scrollIntoView({ block: "nearest" });
+}
+function cpPosition() {
+  if (!CP.input || cpList.hidden) return;
+  const r = CP.input.getBoundingClientRect(), vv = window.visualViewport;
+  const vh = vv ? vv.height + vv.offsetTop : innerHeight, vw = innerWidth;
+  const navH = matchMedia("(max-width:680px)").matches ? 70 : 0;
+  const w = Math.min(Math.max(r.width, 300), vw - 16);
+  const left = Math.min(Math.max(8, r.left), vw - w - 8);
+  const below = vh - navH - r.bottom - 8, above = r.top - 8;
+  const openUp = below < 220 && above > below;
+  const maxH = Math.max(140, Math.min(320, openUp ? above : below));
+  Object.assign(cpList.style, { left: left + "px", width: w + "px", maxHeight: maxH + "px",
+    top: openUp ? "auto" : (r.bottom + 4) + "px", bottom: openUp ? (innerHeight - r.top + 4) + "px" : "auto" });
+}
+function cpClose(restore) {
+  cpList.hidden = true;
+  if (restore && CP.input) CP.input.value = cpLabel(CP.input.dataset.v);
+  CP.input = null; CP.onPick = null;
+}
+function cpChoose(v) {
+  const input = CP.input, cb = CP.onPick; if (!input) return;
+  cpClose(false);
+  if (v.startsWith("__new:")) { input.value = cpLabel(input.dataset.v); input.blur(); cb(v); return; }
+  cpSet(input, v); input.blur(); cb(v);
+}
+cpList.addEventListener("pointerdown", e => e.preventDefault());   // non perdere il focus mentre si sceglie
+cpList.addEventListener("click", e => { const o = e.target.closest(".cpopt"); if (o) cpChoose(CP.opts[Number(o.dataset.i)]); });
+document.addEventListener("pointerdown", e => { if (!cpList.hidden && e.target !== CP.input && !cpList.contains(e.target)) cpClose(true); });
+addEventListener("scroll", () => cpPosition(), true);
+addEventListener("resize", () => cpPosition());
+if (window.visualViewport) visualViewport.addEventListener("resize", () => cpPosition());
+
 const cpValue = e => e && e.project_id ? "p:" + e.project_id : e && e.client_id ? "c:" + e.client_id : "";
 
 /* ================= Giorno ================= */
@@ -183,16 +292,15 @@ function buildGrid() {
     row.innerHTML =
       '<span class="tm"><b>' + slotTime(s) + '</b>–' + slotEnd(s) + '</span>' +
       '<textarea class="txt" rows="1" id="t' + s + '" maxlength="500" placeholder="Su cosa hai lavorato?" aria-label="Attività ' + slotTime(s) + '–' + slotEnd(s) + '"></textarea>' +
-      '<span class="side"><select class="cp" id="c' + s + '" aria-label="Cliente e progetto ' + slotTime(s) + '"></select>' +
+      '<span class="side"><input class="cp" id="c' + s + '" placeholder="Cliente / progetto" aria-label="Cliente e progetto ' + slotTime(s) + '">' +
       '<button class="lun" id="l' + s + '" aria-pressed="false" title="Segna come pausa pranzo">Pranzo</button>' +
       '<button class="rep" id="r' + s + '" title="Copia la fascia precedente" aria-label="Copia la fascia precedente"' + (s === 0 ? " disabled" : "") + '>↑</button></span>';
     grid.appendChild(row);
     const txt = row.querySelector(".txt"), sel = row.querySelector(".cp");
     txt.addEventListener("input", () => { grow(txt); setSlot(s, { description: txt.value }); });
     txt.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); if (s < 47) $("t" + (s + 1)).focus(); } });
-    sel.addEventListener("change", () => {
-      const v = sel.value;
-      if (v === "__new") { sel.value = cpValue(dayMap()[s]); openQuickAdd(s); return; }
+    cpAttach(sel, v => {
+      if (v.startsWith("__new:")) { openQuickAdd(s, v.slice(6)); return; }
       applyCp(s, v);
     });
     row.querySelector(".lun").addEventListener("click", () => { const e = dayMap()[s]; setSlot(s, { is_lunch: !(e && e.is_lunch) }); });
@@ -259,15 +367,12 @@ function renderDay() {
 function paintRow(s, setText) {
   const e = dayMap()[s], row = $("grid").children[s], sel = $("c" + s), txt = $("t" + s);
   if (setText) { txt.value = e ? e.description || "" : ""; grow(txt); }
-  sel.innerHTML = cpOptions(e && e.client_id, e && e.project_id);
-  sel.value = cpValue(e);
+  if (CP.input !== sel) cpSet(sel, cpValue(e));
   const L = !!(e && e.is_lunch);
   row.classList.toggle("filled", !!filled(e) && !L);
   row.classList.toggle("lunch", L);
   $("l" + s).setAttribute("aria-pressed", L ? "true" : "false");
   txt.placeholder = L ? "Pausa pranzo" : "Su cosa hai lavorato?";
-  sel.classList.toggle("set", !!(e && e.client_id));
-  sel.style.setProperty("--chip", e && e.client_id ? chip(e.client_id) : "var(--line)");
 }
 function renderWeek() {
   const w = $("week"); w.innerHTML = "";
@@ -335,15 +440,18 @@ addEventListener("beforeunload", e => { if (pending.size || inflight) { e.preven
 
 /* ---------- Aggiunta rapida cliente/progetto ---------- */
 let qaSlot = null;
-function openQuickAdd(s) {
-  qaSlot = s;
+function openQuickAdd(s, typed) {
+  qaSlot = s; typed = (typed || "").trim();
   $("qaClient").innerHTML = '<option value="__new">+ Nuovo cliente</option>' +
     S.clients.filter(c => !c.archived).map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join("");
   $("qaClient").value = S.clients.some(c => !c.archived) ? String(S.clients.find(c => !c.archived).id) : "__new";
+  // se il testo scritto è il nome di un cliente esistente, si aggiunge un progetto a quel cliente
+  const match = typed && S.clients.find(c => !c.archived && norm(c.name) === norm(typed));
+  if (typed) $("qaClient").value = match ? String(match.id) : "__new";
   $("qaNewClientWrap").hidden = $("qaClient").value !== "__new";
-  $("qaNewClient").value = ""; $("qaProject").value = ""; $("qaMsg").hidden = true;
+  $("qaNewClient").value = typed && !match ? typed : ""; $("qaProject").value = ""; $("qaMsg").hidden = true;
   $("qa").hidden = false;
-  ($("qaClient").value === "__new" ? $("qaNewClient") : $("qaProject")).focus();
+  ($("qaClient").value === "__new" && !typed ? $("qaNewClient") : $("qaProject")).focus();
 }
 $("qaClient").onchange = () => { $("qaNewClientWrap").hidden = $("qaClient").value !== "__new"; };
 $("qaCancel").onclick = () => { $("qa").hidden = true; };
@@ -360,7 +468,8 @@ $("qaForm").addEventListener("submit", async e => {
     let pid = null; const pn = $("qaProject").value.trim();
     if (pn) pid = (await addProject(cid, pn)).id;
     $("qa").hidden = true;
-    if (qaSlot !== null) setSlot(qaSlot, { client_id: cid, project_id: pid });
+    if (qaSlot === "range") cpSet($("rngCp"), pid ? "p:" + pid : "c:" + cid);
+    else if (qaSlot !== null) setSlot(qaSlot, { client_id: cid, project_id: pid });
     renderDay(); toast("Aggiunto");
   } catch (err) { showErr(err.message); }
 });
@@ -385,7 +494,7 @@ function openRange() {
   // proposta: dalla prima fascia vuota dalle 9 in poi, per 4 ore
   let start = 18; while (start < 47 && filled(map[start])) start++;
   $("rngFrom").value = String(start); $("rngTo").value = String(Math.min(48, start + 8));
-  $("rngCp").innerHTML = cpOptions(null, null).replace('<option value="__new">+ Aggiungi cliente o progetto…</option>', "");
+  cpSet($("rngCp"), "");
   $("rngTxt").value = ""; $("rngLunch").checked = false; $("rngMsg").hidden = true;
   resetRangeWarn(); rangeLen();
   $("rng").hidden = false; $("rngFrom").focus();
@@ -400,7 +509,8 @@ function rangeLen() {
   if (id === "rngFrom" && Number($("rngTo").value) <= Number($("rngFrom").value)) $("rngTo").value = String(Math.min(48, Number($("rngFrom").value) + 1));
   resetRangeWarn(); rangeLen();
 }));
-["rngCp", "rngTxt", "rngLunch"].forEach(id => $(id).addEventListener("input", resetRangeWarn));
+["rngTxt", "rngLunch"].forEach(id => $(id).addEventListener("input", resetRangeWarn));
+cpAttach($("rngCp"), v => { resetRangeWarn(); if (v.startsWith("__new:")) openQuickAdd("range", v.slice(6)); });
 $("rangeBtn").onclick = openRange;
 $("rngCancel").onclick = () => { $("rng").hidden = true; };
 $("rng").addEventListener("click", e => { if (e.target === $("rng")) $("rng").hidden = true; });
@@ -411,7 +521,7 @@ async function applyRange(onlyEmpty) {
   const [a, b] = rangeBounds(), err = m => { $("rngMsg").textContent = m; $("rngMsg").hidden = false; };
   $("rngMsg").hidden = true;
   if (b <= a) return err("L'orario di fine deve venire dopo quello di inizio.");
-  const txt = $("rngTxt").value.trim(), cp = $("rngCp").value, lunch = $("rngLunch").checked;
+  const txt = $("rngTxt").value.trim(), cp = $("rngCp").dataset.v || "", lunch = $("rngLunch").checked;
   if (!txt && !cp && !lunch) return err("Scegli un cliente o scrivi su cosa hai lavorato.");
   const map = dayMap(), ds = iso(S.cur);
   const busy = []; for (let s = a; s < b; s++) if (filled(map[s])) busy.push(s);
