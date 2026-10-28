@@ -375,6 +375,81 @@ async function addProject(clientId, name) {
   S.projects.push(data); S.projects.sort((a, b) => a.name.localeCompare(b.name, "it")); return data;
 }
 
+/* ---------- Intervallo: compila più fasce in un colpo ---------- */
+let rngConfirm = false;
+function openRange() {
+  const ds = iso(S.cur), map = dayMap();
+  $("rngDay").textContent = GIORNI[S.cur.getDay()] + " " + S.cur.getDate() + " " + MESI[S.cur.getMonth()];
+  $("rngFrom").innerHTML = SLOTS.map(s => '<option value="' + s + '">' + slotTime(s) + "</option>").join("");
+  $("rngTo").innerHTML = SLOTS.map(s => '<option value="' + (s + 1) + '">' + slotEnd(s) + "</option>").join("");
+  // proposta: dalla prima fascia vuota dalle 9 in poi, per 4 ore
+  let start = 18; while (start < 47 && filled(map[start])) start++;
+  $("rngFrom").value = String(start); $("rngTo").value = String(Math.min(48, start + 8));
+  $("rngCp").innerHTML = cpOptions(null, null).replace('<option value="__new">+ Aggiungi cliente o progetto…</option>', "");
+  $("rngTxt").value = ""; $("rngLunch").checked = false; $("rngMsg").hidden = true;
+  resetRangeWarn(); rangeLen();
+  $("rng").hidden = false; $("rngFrom").focus();
+}
+function resetRangeWarn() { rngConfirm = false; $("rngWarn").hidden = true; $("rngEmpty").hidden = true; $("rngOk").textContent = "Compila le fasce"; }
+function rangeBounds() { return [Number($("rngFrom").value), Number($("rngTo").value)]; }
+function rangeLen() {
+  const [a, b] = rangeBounds();
+  $("rngLen").textContent = b > a ? slotTime(a) + "–" + slotEnd(b - 1) + " · " + fmtH((b - a) / 2) + " · " + (b - a) + " fasce" : "L'orario di fine deve venire dopo quello di inizio.";
+}
+["rngFrom", "rngTo"].forEach(id => $(id).addEventListener("change", () => {
+  if (id === "rngFrom" && Number($("rngTo").value) <= Number($("rngFrom").value)) $("rngTo").value = String(Math.min(48, Number($("rngFrom").value) + 1));
+  resetRangeWarn(); rangeLen();
+}));
+["rngCp", "rngTxt", "rngLunch"].forEach(id => $(id).addEventListener("input", resetRangeWarn));
+$("rangeBtn").onclick = openRange;
+$("rngCancel").onclick = () => { $("rng").hidden = true; };
+$("rng").addEventListener("click", e => { if (e.target === $("rng")) $("rng").hidden = true; });
+$("rngEmpty").onclick = () => applyRange(true);
+$("rngForm").addEventListener("submit", e => { e.preventDefault(); applyRange(false); });
+
+async function applyRange(onlyEmpty) {
+  const [a, b] = rangeBounds(), err = m => { $("rngMsg").textContent = m; $("rngMsg").hidden = false; };
+  $("rngMsg").hidden = true;
+  if (b <= a) return err("L'orario di fine deve venire dopo quello di inizio.");
+  const txt = $("rngTxt").value.trim(), cp = $("rngCp").value, lunch = $("rngLunch").checked;
+  if (!txt && !cp && !lunch) return err("Scegli un cliente o scrivi su cosa hai lavorato.");
+  const map = dayMap(), ds = iso(S.cur);
+  const busy = []; for (let s = a; s < b; s++) if (filled(map[s])) busy.push(s);
+  if (busy.length && !rngConfirm && !onlyEmpty) {
+    rngConfirm = true;
+    $("rngWarnTitle").textContent = busy.length === b - a ? "Tutte le fasce scelte sono già compilate." : busy.length + (busy.length === 1 ? " fascia è già compilata." : " fasce sono già compilate.");
+    $("rngWarnList").textContent = toRuns(busy).join(", ") + ". Vuoi sostituirle?";
+    $("rngWarn").hidden = false; $("rngEmpty").hidden = busy.length === b - a; $("rngOk").textContent = "Sostituisci";
+    return;
+  }
+  let client_id = null, project_id = null;
+  if (cp) { const [k, id] = cp.split(":"); if (k === "c") client_id = Number(id); else { project_id = Number(id); client_id = projectById(project_id).client_id; } }
+  const rows = [];
+  for (let s = a; s < b; s++) {
+    if (onlyEmpty && filled(map[s])) continue;
+    const key = ds + "|" + s; clearTimeout(pending.get(key)); pending.delete(key);
+    const e = { user_id: S.me.id, day: ds, slot: s, description: txt, client_id, project_id, is_lunch: lunch };
+    map[s] = e; rows.push(e);
+  }
+  $("rngOk").disabled = true;
+  setSync("Salvataggio…");
+  const { error } = await sb.from("entries").upsert(rows, { onConflict: "user_id,day,slot" });
+  $("rngOk").disabled = false;
+  if (error) { setSync("Salvataggio non riuscito: controlla la connessione", true); return err("Non sono riuscito a salvare. Controlla la connessione e riprova."); }
+  setSync("Salvato");
+  $("rng").hidden = true; renderDay();
+  toast(rows.length ? "Compilate " + rows.length + " fasce (" + fmtH(rows.length / 2) + ")" : "Nessuna fascia vuota da compilare");
+}
+/* [18,19,20,24] -> ["09:00–10:30", "12:00–12:30"] */
+function toRuns(list) {
+  const out = []; let st = list[0], pr = list[0];
+  for (let i = 1; i <= list.length; i++) {
+    if (list[i] === pr + 1) { pr = list[i]; continue; }
+    out.push(slotTime(st) + "–" + slotEnd(pr)); st = pr = list[i];
+  }
+  return out;
+}
+
 /* ================= Lettura fasce in un intervallo ================= */
 async function fetchEntries(from, to, f = {}) {
   const out = []; const size = 1000;

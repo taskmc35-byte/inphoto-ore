@@ -75,8 +75,8 @@
       </div>
       <div class="week" id="week"></div>
       <div class="daybar">
-        <span class="t">Lavorate <b id="dayHours">0 h</b><span id="lunchInfo"></span></span>
-        <span class="sync" id="sync"></span>
+        <span class="t">Lavorate <b id="dayHours">0 h</b><span id="lunchInfo"></span> <span class="sync" id="sync"></span></span>
+        <button class="btn acc sm" id="rangeBtn" type="button">+ Aggiungi intervallo</button>
       </div>
     </div>
     <div class="grid" id="grid"></div>
@@ -251,6 +251,31 @@
     <div class="frow actions">
       <button class="btn" type="button" id="qaCancel">Annulla</button>
       <button class="btn acc" type="submit">Aggiungi e usa</button>
+    </div>
+  </form>
+</div>
+
+<!-- Finestra intervallo: compila più fasce in un colpo -->
+<div class="modal" id="rng" hidden>
+  <form class="modal-card form" id="rngForm">
+    <h3>Aggiungi intervallo</h3>
+    <p class="note" id="rngDay"></p>
+    <div class="frow">
+      <label class="field"><span>Dalle</span><select id="rngFrom"></select></label>
+      <label class="field"><span>Alle</span><select id="rngTo"></select></label>
+    </div>
+    <p class="note" id="rngLen"></p>
+    <label class="field"><span>Cliente e progetto</span><select id="rngCp"></select></label>
+    <label class="field"><span>Su cosa hai lavorato</span><textarea id="rngTxt" rows="2" maxlength="500" placeholder="es. Shooting prodotti in studio"></textarea></label>
+    <label class="check"><input type="checkbox" id="rngLunch"> È la pausa pranzo (non conta nelle ore)</label>
+    <div class="banner" id="rngWarn" hidden>
+      <div><b id="rngWarnTitle"></b><p class="note" id="rngWarnList"></p></div>
+    </div>
+    <p class="msg err" id="rngMsg" hidden></p>
+    <div class="frow actions" id="rngActs">
+      <button class="btn" type="button" id="rngCancel">Annulla</button>
+      <button class="btn" type="button" id="rngEmpty" hidden>Solo le fasce vuote</button>
+      <button class="btn acc" type="submit" id="rngOk">Compila le fasce</button>
     </div>
   </form>
 </div>
