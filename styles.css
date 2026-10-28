@@ -300,3 +300,10 @@ input.cp::placeholder { color:var(--muted); }
 .filters:not([open]) { padding-block:12px; gap:0; }
 .matrix { border-collapse:separate; border-spacing:0; }
 @media (max-width:680px) { .matrix th:first-child, .matrix td:first-child { min-width:140px; max-width:170px; } }
+/* iPhone: i campi data hanno una larghezza minima propria e uscivano dal riquadro */
+input[type=date] { -webkit-appearance:none; appearance:none; display:block; min-width:0; max-width:100%; box-sizing:border-box; }
+.field input[type=date] { width:100%; text-align:left; }
+input[type=date]::-webkit-date-and-time-value { text-align:left; margin:0; }
+input[type=date]::-webkit-calendar-picker-indicator { margin-left:auto; }
+.field { overflow:hidden; }
+.field > span { overflow:visible; }
