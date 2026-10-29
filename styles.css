@@ -363,3 +363,10 @@ body.noscroll { overflow:hidden; }
 .trow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
 .tsmall { font-size:12px; color:var(--muted); margin-top:2px; }
 #multiNote { font-size:13px; margin-top:-6px; }
+
+/* Tipologia scelta nella singola fascia (solo progetti con più tipologie) */
+.row .ty { grid-area:ty; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.row.hasty { grid-template-areas:"tm txt side" ". ty ty"; row-gap:6px; }
+.ty-l { font-size:12px; font-family:var(--f-display); font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-right:4px; }
+.ty-l.warn { color:var(--warn); }
+@media (max-width:680px) { .row.hasty { grid-template-areas:"tm side" "txt txt" "ty ty"; } }

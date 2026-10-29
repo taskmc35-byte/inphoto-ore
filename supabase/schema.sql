@@ -170,6 +170,9 @@ create policy "membri leggono assegnazioni" on public.project_type_links for sel
 create policy "membri assegnano tipologie" on public.project_type_links for insert to authenticated with check ((select private.is_member()));
 create policy "membri tolgono tipologie" on public.project_type_links for delete to authenticated using ((select private.is_member()));
 
+alter table public.entries add column if not exists type_id bigint references public.project_types (id) on delete set null;
+create index if not exists entries_type_idx on public.entries (type_id);
+
 insert into public.project_types (name, sort)
 select v.name, v.sort from (values ('Foto', 1), ('Video', 2), ('Social e Web', 3), ('Grafica', 4)) as v(name, sort)
 where not exists (select 1 from public.project_types);

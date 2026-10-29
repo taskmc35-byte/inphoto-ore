@@ -156,6 +156,20 @@ async function loadLookups() {
 const projTypes = pid => { const set = S.ptypes?.get(pid); return set ? S.types.filter(t => set.has(t.id)).map(t => t.id) : []; };
 const typeName = id => S.types.find(t => t.id === id)?.name || "Tipologia eliminata";
 const typeLabel = pid => projTypes(pid).map(typeName).join(", ");
+/* tipologia di una fascia: quella scelta, oppure l'unica del progetto.
+   "0" = progetto senza tipologie (o nessun progetto), "nd" = progetto con più tipologie ma nessuna scelta */
+function slotType(e) {
+  if (e.type_id) return String(e.type_id);
+  const t = e.project_id ? projTypes(e.project_id) : [];
+  return t.length === 1 ? String(t[0]) : t.length > 1 ? "nd" : "0";
+}
+const slotTypeName = e => { const k = slotType(e); return k === "0" ? "" : k === "nd" ? "non indicata" : typeName(Number(k)); };
+/* tipologia da salvare quando si sceglie un progetto: l'unica, oppure quella già scelta se è ancora valida */
+function typeFor(project_id, prev) {
+  const t = project_id ? projTypes(project_id) : [];
+  if (t.length === 1) return t[0];
+  return prev && t.includes(prev) ? prev : null;
+}
 async function toggleProjType(pid, tid) {
   const on = S.ptypes.get(pid)?.has(tid);
   const q = on ? sb.from("project_type_links").delete().eq("project_id", pid).eq("type_id", tid)
@@ -356,7 +370,8 @@ function buildGrid() {
       '<textarea class="txt" rows="1" id="t' + s + '" maxlength="500" placeholder="Su cosa hai lavorato?" aria-label="Attività ' + slotTime(s) + '–' + slotEnd(s) + '"></textarea>' +
       '<span class="side"><input class="cp" id="c' + s + '" placeholder="Cliente / progetto" aria-label="Cliente e progetto ' + slotTime(s) + '">' +
       '<button class="lun" id="l' + s + '" aria-pressed="false" title="Segna come pausa pranzo">Pranzo</button>' +
-      '<button class="rep" id="r' + s + '" title="Copia la fascia precedente" aria-label="Copia la fascia precedente"' + (s === 0 ? " disabled" : "") + '>↑</button></span>';
+      '<button class="rep" id="r' + s + '" title="Copia la fascia precedente" aria-label="Copia la fascia precedente"' + (s === 0 ? " disabled" : "") + '>↑</button></span>' +
+      '<span class="ty" id="y' + s + '" hidden></span>';
     grid.appendChild(row);
     const txt = row.querySelector(".txt"), sel = row.querySelector(".cp");
     txt.addEventListener("input", () => { grow(txt); setSlot(s, { description: txt.value }); });
@@ -369,7 +384,7 @@ function buildGrid() {
     row.querySelector(".rep").addEventListener("click", () => {
       const p = dayMap()[s - 1];
       if (!p || !filled(p)) { toast("La fascia precedente è vuota"); return; }
-      setSlot(s, { description: p.description, client_id: p.client_id, project_id: p.project_id, is_lunch: p.is_lunch });
+      setSlot(s, { description: p.description, client_id: p.client_id, project_id: p.project_id, is_lunch: p.is_lunch, type_id: p.type_id || null });
       paintRow(s, true);
     });
   });
@@ -377,10 +392,10 @@ function buildGrid() {
 }
 function grow(el) { el.style.height = "auto"; el.style.height = (el.scrollHeight + 2) + "px"; }
 function applyCp(s, v) {
-  if (!v) return setSlot(s, { client_id: null, project_id: null });
+  if (!v) return setSlot(s, { client_id: null, project_id: null, type_id: null });
   const [k, id] = v.split(":"); const n = Number(id);
-  if (k === "c") setSlot(s, { client_id: n, project_id: null });
-  else { const p = projectById(n); setSlot(s, { client_id: p.client_id, project_id: n }); }
+  if (k === "c") setSlot(s, { client_id: n, project_id: null, type_id: null });
+  else { const p = projectById(n), prev = dayMap()[s]?.type_id; setSlot(s, { client_id: p.client_id, project_id: n, type_id: typeFor(n, prev) }); }
 }
 const filled = e => e && ((e.description && e.description.trim()) || e.client_id || e.is_lunch);
 const worked = e => e && !e.is_lunch && ((e.description && e.description.trim()) || e.client_id);
@@ -435,6 +450,16 @@ function paintRow(s, setText) {
   row.classList.toggle("lunch", L);
   $("l" + s).setAttribute("aria-pressed", L ? "true" : "false");
   txt.placeholder = L ? "Pausa pranzo" : "Su cosa hai lavorato?";
+  paintTypes(s, e);
+}
+/* scelta della tipologia nella fascia: compare solo se il progetto ne ha più di una */
+function paintTypes(s, e) {
+  const box = $("y" + s), list = S.typesOn && e && e.project_id && !e.is_lunch ? projTypes(e.project_id) : [];
+  if (list.length < 2) { box.hidden = true; box.innerHTML = ""; $("grid").children[s].classList.remove("hasty"); return; }
+  box.hidden = false; $("grid").children[s].classList.add("hasty");
+  box.innerHTML = '<span class="ty-l' + (e.type_id && list.includes(e.type_id) ? "" : " warn") + '">' + (e.type_id && list.includes(e.type_id) ? "Tipologia" : "Scegli la tipologia") + "</span>" +
+    list.map(t => '<button type="button" class="tchip" data-t="' + t + '" aria-pressed="' + (e.type_id === t) + '">' + esc(typeName(t)) + "</button>").join("");
+  box.querySelectorAll("button").forEach(b => b.onclick = () => { const t = Number(b.dataset.t); setSlot(s, { type_id: dayMap()[s]?.type_id === t ? null : t }); });
 }
 function renderWeek() {
   const w = $("week"); w.innerHTML = "";
@@ -473,7 +498,7 @@ let inflight = 0, failed = 0;
 function setSync(t, err) { const s = $("sync"); s.textContent = t; s.classList.toggle("err", !!err); }
 function setSlot(s, patch) {
   const ds = iso(S.cur), map = dayMap(ds);
-  const base = map[s] || { user_id: S.me.id, day: ds, slot: s, description: "", client_id: null, project_id: null, is_lunch: false };
+  const base = map[s] || { user_id: S.me.id, day: ds, slot: s, description: "", client_id: null, project_id: null, is_lunch: false, type_id: null };
   const e = Object.assign({}, base, patch);
   if (!filled(e)) delete map[s]; else map[s] = e;
   if (patch.description === undefined) paintRow(s, false); else {
@@ -490,10 +515,12 @@ async function save(ds, s) {
   const e = (S.days[ds] || {})[s];
   let error;
   if (!e) ({ error } = await sb.from("entries").delete().eq("user_id", S.me.id).eq("day", ds).eq("slot", s));
-  else ({ error } = await sb.from("entries").upsert({
-    user_id: S.me.id, day: ds, slot: s, description: (e.description || "").slice(0, 500),
-    client_id: e.client_id, project_id: e.project_id, is_lunch: !!e.is_lunch
-  }, { onConflict: "user_id,day,slot" }));
+  else {
+    const row = { user_id: S.me.id, day: ds, slot: s, description: (e.description || "").slice(0, 500),
+      client_id: e.client_id, project_id: e.project_id, is_lunch: !!e.is_lunch };
+    if (S.typesOn) row.type_id = e.is_lunch ? null : (e.type_id || null);
+    ({ error } = await sb.from("entries").upsert(row, { onConflict: "user_id,day,slot" }));
+  }
   inflight--;
   if (error) { failed++; setSync("Salvataggio non riuscito: controlla la connessione. Riprovo…", true); setTimeout(() => { if (!pending.has(key)) { pending.set(key, 0); save(ds, s); } }, 4000); return; }
   if (!inflight && !pending.size) setSync("Salvato");
@@ -534,7 +561,7 @@ $("qaForm").addEventListener("submit", async e => {
       for (const cb of $("qaTypes").querySelectorAll("input:checked")) await toggleProjType(pid, Number(cb.value));
     }
     $("qa").hidden = true;
-    if (qaSlot === "range") cpSet($("rngCp"), pid ? "p:" + pid : "c:" + cid);
+    if (qaSlot === "range") { cpSet($("rngCp"), pid ? "p:" + pid : "c:" + cid); RT = null; paintRangeTypes(); }
     else if (qaSlot !== null) setSlot(qaSlot, { client_id: cid, project_id: pid });
     renderDay(); toast("Aggiunto");
   } catch (err) { showErr(err.message); }
@@ -560,7 +587,7 @@ function openRange() {
   // proposta: dalla prima fascia vuota dalle 9 in poi, per 4 ore
   let start = 18; while (start < 47 && filled(map[start])) start++;
   $("rngFrom").value = String(start); $("rngTo").value = String(Math.min(48, start + 8));
-  cpSet($("rngCp"), "");
+  cpSet($("rngCp"), ""); paintRangeTypes();
   $("rngTxt").value = ""; $("rngLunch").checked = false; $("rngMsg").hidden = true;
   resetRangeWarn(); rangeLen();
   $("rng").hidden = false;   // nessun campo attivo all'apertura: su iPhone aprirebbe subito la tendina
@@ -576,7 +603,17 @@ function rangeLen() {
   resetRangeWarn(); rangeLen();
 }));
 ["rngTxt", "rngLunch"].forEach(id => $(id).addEventListener("input", resetRangeWarn));
-cpAttach($("rngCp"), v => { resetRangeWarn(); if (v.startsWith("__new:")) openQuickAdd("range", v.slice(6)); });
+cpAttach($("rngCp"), v => { resetRangeWarn(); if (v.startsWith("__new:")) openQuickAdd("range", v.slice(6)); else { RT = null; paintRangeTypes(); } });
+let RT = null;   // tipologia scelta nell'intervallo
+function paintRangeTypes() {
+  const v = $("rngCp").dataset.v || "", pid = v.startsWith("p:") ? Number(v.slice(2)) : null;
+  const list = S.typesOn && pid ? projTypes(pid) : [], box = $("rngTypes");
+  if (list.length < 2) { box.hidden = true; RT = list.length === 1 ? list[0] : null; return; }
+  box.hidden = false;
+  const chips = $("rngTypeChips");
+  chips.innerHTML = list.map(t => '<button type="button" class="tchip" data-t="' + t + '" aria-pressed="' + (RT === t) + '">' + esc(typeName(t)) + "</button>").join("");
+  chips.querySelectorAll("button").forEach(b => b.onclick = () => { const t = Number(b.dataset.t); RT = RT === t ? null : t; paintRangeTypes(); });
+}
 $("rangeBtn").onclick = openRange;
 $("rngCancel").onclick = () => { $("rng").hidden = true; };
 $("rng").addEventListener("click", e => { if (e.target === $("rng")) $("rng").hidden = true; });
@@ -605,6 +642,7 @@ async function applyRange(onlyEmpty) {
     if (onlyEmpty && filled(map[s])) continue;
     const key = ds + "|" + s; clearTimeout(pending.get(key)); pending.delete(key);
     const e = { user_id: S.me.id, day: ds, slot: s, description: txt, client_id, project_id, is_lunch: lunch };
+    if (S.typesOn) e.type_id = lunch || !project_id ? null : (RT && projTypes(project_id).includes(RT) ? RT : typeFor(project_id, null));
     map[s] = e; rows.push(e);
   }
   $("rngOk").disabled = true;
@@ -630,7 +668,7 @@ function toRuns(list) {
 async function fetchEntries(from, to, f = {}) {
   const out = []; const size = 1000;
   for (let off = 0; ; off += size) {
-    let q = sb.from("entries").select("user_id, day, slot, description, client_id, project_id, is_lunch")
+    let q = sb.from("entries").select("user_id, day, slot, description, client_id, project_id, is_lunch" + (S.typesOn ? ", type_id" : ""))
       .gte("day", from).lte("day", to).eq("is_lunch", false);
     if (f.user) q = q.eq("user_id", f.user);
     if (f.client === "none") q = q.is("client_id", null); else if (f.client) q = q.eq("client_id", Number(f.client));
@@ -649,7 +687,7 @@ function toBlocks(rows) {
   rows.forEach(e => {
     const last = out[out.length - 1];
     if (last && last.user_id === e.user_id && last.day === e.day && last.endSlot === e.slot - 1 &&
-        last.client_id === e.client_id && last.project_id === e.project_id && (last.description || "") === (e.description || "")) {
+        last.client_id === e.client_id && last.project_id === e.project_id && (last.type_id || null) === (e.type_id || null) && (last.description || "") === (e.description || "")) {
       last.endSlot = e.slot; last.hours += 0.5;
     } else out.push({ ...e, startSlot: e.slot, endSlot: e.slot, hours: 0.5 });
   });
@@ -727,7 +765,7 @@ function fillFilterSelects() {
     S.clients.map(x => '<option value="' + x.id + '">' + esc(x.name) + (x.archived ? " (archiviato)" : "") + '</option>').join("");
   $("fUser").value = u; $("fClient").value = c;
   const t = $("fType").value;
-  $("fType").innerHTML = '<option value="">Tutte le tipologie</option>' + S.types.map(x => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join("") + '<option value="none">Senza tipologia</option>';
+  $("fType").innerHTML = '<option value="">Tutte le tipologie</option>' + S.types.map(x => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join("") + '<option value="nd">Non indicata</option><option value="none">Senza tipologia</option>';
   $("fType").value = [...$("fType").options].some(o => o.value === t) ? t : "";
   fillProjectFilter();
 }
@@ -783,7 +821,7 @@ function updateFilterSummary() {
 function filteredRows() {
   const q = $("fText").value.trim().toLowerCase(), t = S.typesOn ? $("fType").value : "";
   return R.rows.filter(r => (!q || (r.description || "").toLowerCase().includes(q)) &&
-    (!t || (t === "none" ? !(r.project_id && projTypes(r.project_id).length) : !!(r.project_id && S.ptypes.get(r.project_id)?.has(Number(t))))));
+    (!t || (t === "none" ? slotType(r) === "0" : slotType(r) === t)));
 }
 const DIM = {
   client: { label: "cliente", key: r => String(r.client_id || 0), name: k => clientName(Number(k) || null), color: k => chip(Number(k) || null) },
@@ -794,13 +832,11 @@ const DIM = {
   day: { label: "giorno", key: r => r.day, name: k => G3[parse(k).getDay()] + " " + fmtDate(k), color: () => "var(--accent)", sort: true },
   week: { label: "settimana", key: r => { const [y, w] = isoWeek(parse(r.day)); return y + "-W" + pad(w); }, name: k => { const [y, w] = k.split("-W"); return "Settimana " + Number(w) + " · " + y; }, color: () => "var(--accent)", sort: true },
   month: { label: "mese", key: r => r.day.slice(0, 7), name: k => cap(MESI[Number(k.slice(5)) - 1]) + " " + k.slice(0, 4), color: () => "var(--accent)", sort: true },
-  type: { label: "tipologia", multi: true,
-    keys: r => { const t = r.project_id ? projTypes(r.project_id) : []; return t.length ? t.map(String) : ["0"]; },
-    name: k => k === "0" ? "Senza tipologia" : typeName(Number(k)),
-    color: k => k === "0" ? "var(--muted)" : "var(--c" + ((S.types.findIndex(t => String(t.id) === k) + 3) % 8) + ")" },
+  type: { label: "tipologia", key: r => slotType(r),
+    name: k => k === "0" ? "Senza tipologia" : k === "nd" ? "Tipologia non indicata" : typeName(Number(k)),
+    color: k => k === "0" || k === "nd" ? "var(--muted)" : "var(--c" + ((S.types.findIndex(t => String(t.id) === k) + 3) % 8) + ")" },
 };
 const dimKeys = (dim, r) => DIM[dim].keys ? DIM[dim].keys(r) : [DIM[dim].key(r)];
-const MULTI_NOTE = "I progetti con più tipologie contano per intero in ognuna: la somma delle tipologie può superare il totale.";
 function groupBy(rows, dim) {
   const m = new Map(); rows.forEach(r => dimKeys(dim, r).forEach(k => m.set(k, (m.get(k) || 0) + 0.5)));
   const list = [...m.entries()];
@@ -817,7 +853,8 @@ function renderReport() {
 
   const g = $("fGroup").value, x = $("fCross").value;
   $("groupLabel").textContent = "Ore per " + DIM[g].label + (["client", "user", "project", "type"].includes(g) ? " · tocca una riga per filtrare" : "");
-  $("multiNote").hidden = !(g === "type" || x === "type"); $("multiNote").textContent = MULTI_NOTE;
+  const nd = (g === "type" || x === "type") && rows.some(r => slotType(r) === "nd");
+  $("multiNote").hidden = !nd; $("multiNote").textContent = "“Tipologia non indicata”: ore su progetti con più tipologie in cui la fascia non dice quale. Si sistemano dal registro di chi le ha compilate.";
   const box = $("repBars"); box.innerHTML = "";
   if (!rows.length) box.innerHTML = '<div class="empty">Nessuna lavorazione con questi filtri.</div>';
   const list = groupBy(rows, g), max = Math.max(1, ...list.map(l => l[1]));
@@ -855,7 +892,7 @@ function renderDetail() {
   let h = '<thead><tr><th>Data</th><th>Persona</th><th>Orario</th><th class="num">Ore</th><th>Cliente</th><th>Progetto</th><th>Descrizione</th></tr></thead><tbody>';
   b.slice(0, R.shown).forEach(r => {
     h += '<tr><td class="mono">' + fmtDate(r.day) + '</td><td class="nw">' + esc(profileById(r.user_id)?.full_name || "—") + '</td><td class="mono">' + slotTime(r.startSlot) + "–" + slotEnd(r.endSlot) +
-      '</td><td class="num">' + fmtH(r.hours).replace(" h", "") + '</td><td><span class="chip" style="--chip:' + chip(r.client_id) + '">' + esc(clientName(r.client_id)) + '</span></td><td>' + esc(projectName(r.project_id)) + (S.typesOn && r.project_id && projTypes(r.project_id).length ? '<div class="tsmall">' + esc(typeLabel(r.project_id)) + '</div>' : "") +
+      '</td><td class="num">' + fmtH(r.hours).replace(" h", "") + '</td><td><span class="chip" style="--chip:' + chip(r.client_id) + '">' + esc(clientName(r.client_id)) + '</span></td><td>' + esc(projectName(r.project_id)) + (S.typesOn && slotTypeName(r) ? '<div class="tsmall">' + esc(slotTypeName(r)) + '</div>' : "") +
       '</td><td class="desc">' + esc(r.description || "") + "</td></tr>";
   });
   $("detail").innerHTML = h + "</tbody>";
@@ -924,9 +961,9 @@ const personName = id => profileById(id)?.full_name || "Utente rimosso";
 const projKey = r => r.project_id ? "p" + r.project_id : "c" + (r.client_id || 0);
 function blockRow(b) {
   return [parse(b.day), GIORNI[parse(b.day).getDay()], personName(b.user_id), slotTime(b.startSlot), slotEnd(b.endSlot), b.hours,
-    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), b.project_id ? typeLabel(b.project_id) : "", b.description || ""];
+    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), slotTypeName(b), b.description || ""];
 }
-const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Tipologie", "Descrizione"];
+const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Tipologia", "Descrizione"];
 const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t", "t"];
 function filterLines() {
   return [
@@ -954,8 +991,7 @@ function groupTable(sh, rows, dim, title) {
   const tot = rows.length * .5;
   sh.section(title || "Ore per " + DIM[dim].label);
   const body = groupBy(rows, dim).map(([k, h]) => [DIM[dim].name(k), h, pct(h, tot)]);
-  sh.table([cap(DIM[dim].label), "Ore", "%"], body, DIM[dim].multi ? null : ["Totale", tot, 1], ["t", "h", "p"]);
-  if (DIM[dim].multi) { sh.rows.splice(sh.rows.length - 1, 0, [MULTI_NOTE]); sh.st.push([sh.rows.length - 2, "sub", 1]); }
+  sh.table([cap(DIM[dim].label), "Ore", "%"], body, ["Totale", tot, 1], ["t", "h", "p"]);
 }
 function matrixTable(sh, rows, g, x, title) {
   const rl = groupBy(rows, g), cl = groupBy(rows, x).map(c => c[0]), tot = rows.length * .5;
