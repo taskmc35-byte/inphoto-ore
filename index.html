@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script>try{var t=localStorage.getItem("inphoto-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="styles.css?v=20261028f">
+<link rel="stylesheet" href="styles.css?v=20261029a">
 </head>
 <body>
 
@@ -127,6 +127,7 @@
         <label class="field sm"><span>Persona</span><select id="fUser"></select></label>
         <label class="field sm"><span>Cliente</span><select id="fClient"></select></label>
         <label class="field sm"><span>Progetto</span><select id="fProject"></select></label>
+        <label class="field sm" data-types hidden><span>Tipologia</span><select id="fType"></select></label>
       </div>
       <div class="frow">
         <label class="field sm grow"><span>Cerca nelle descrizioni</span><input id="fText" type="search" placeholder="es. shooting, post-produzione"></label>
@@ -138,6 +139,7 @@
             <option value="day">Giorno</option>
             <option value="week">Settimana</option>
             <option value="month">Mese</option>
+            <option value="type">Tipologia</option>
           </select>
         </label>
         <label class="field sm"><span>Incrocia con</span>
@@ -146,6 +148,7 @@
             <option value="user" selected>Persona</option>
             <option value="client">Cliente</option>
             <option value="project">Progetto</option>
+            <option value="type">Tipologia</option>
           </select>
         </label>
       </div>
@@ -166,6 +169,7 @@
     </div>
 
     <p class="label" id="groupLabel">Ore per cliente</p>
+    <p class="note" id="multiNote" hidden></p>
     <div class="bars" id="repBars"></div>
 
     <div id="matrixWrap" hidden>
@@ -194,6 +198,15 @@
       </form>
       <label class="check"><input type="checkbox" id="showArchived"> Mostra archiviati</label>
       <div class="clist" id="clist"></div>
+      <div data-admin hidden><div class="card" data-types hidden>
+        <h3>Tipologie dei progetti</h3>
+        <p class="note">Le tipologie si assegnano ai progetti qui sopra, toccando i pulsanti sotto ogni progetto. Un progetto può averne più di una.</p>
+        <form class="addrow" id="addTypeForm">
+          <input id="newType" placeholder="Nuova tipologia" maxlength="40" autocomplete="off" aria-label="Nome nuova tipologia">
+          <button class="btn acc" type="submit">Aggiungi</button>
+        </form>
+        <div class="tlist" id="tlist"></div>
+      </div></div>
     </div>
 
     <div id="sub-team" class="sub" hidden>
@@ -251,6 +264,7 @@
     <label class="field"><span>Cliente</span><select id="qaClient"></select></label>
     <label class="field" id="qaNewClientWrap" hidden><span>Nome del nuovo cliente</span><input id="qaNewClient" maxlength="80" autocomplete="off"></label>
     <label class="field"><span>Progetto (facoltativo)</span><input id="qaProject" maxlength="80" autocomplete="off" placeholder="es. Shooting catalogo autunno"></label>
+    <div class="field" data-types hidden><span>Tipologie del progetto (facoltative)</span><div class="tpicks" id="qaTypes"></div></div>
     <p class="msg err" id="qaMsg" hidden></p>
     <div class="frow actions">
       <button class="btn" type="button" id="qaCancel">Annulla</button>
@@ -286,8 +300,8 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=20261028f"></script>
+<script src="config.js?v=20261029a"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261028f"></script>
+<script src="app.js?v=20261029a"></script>
 </body>
 </html>

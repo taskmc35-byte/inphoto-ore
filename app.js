@@ -136,13 +136,47 @@ sb.auth.onAuthStateChange(ev => { if (ev === "SIGNED_OUT" && !$("app").hidden) l
 
 /* ================= Clienti, progetti, persone ================= */
 async function loadLookups() {
-  const [c, p, u] = await Promise.all([
+  const [c, p, u, t, l] = await Promise.all([
     sb.from("clients").select("*").order("name"),
     sb.from("projects").select("*").order("name"),
-    sb.from("profiles").select("id, full_name, email, role, active, created_at").order("full_name"),
+    sb.from("profiles").select("*").order("full_name"),
+    sb.from("project_types").select("*").order("sort").order("name"),
+    sb.from("project_type_links").select("project_id, type_id"),
   ]);
   if (c.error || p.error || u.error) toast("Non riesco a caricare clienti e progetti");
   S.clients = c.data || []; S.projects = p.data || []; S.profiles = u.data || [];
+  // tipologie: se il database non è ancora aggiornato la funzione resta semplicemente nascosta
+  S.typesOn = !t.error && !l.error;
+  S.types = S.typesOn ? t.data : [];
+  S.ptypes = new Map();
+  (S.typesOn ? l.data : []).forEach(x => { if (!S.ptypes.has(x.project_id)) S.ptypes.set(x.project_id, new Set()); S.ptypes.get(x.project_id).add(x.type_id); });
+  document.querySelectorAll("[data-types]").forEach(el => el.hidden = !S.typesOn);
+}
+/* tipologie di un progetto, nell'ordine dell'elenco */
+const projTypes = pid => { const set = S.ptypes?.get(pid); return set ? S.types.filter(t => set.has(t.id)).map(t => t.id) : []; };
+const typeName = id => S.types.find(t => t.id === id)?.name || "Tipologia eliminata";
+const typeLabel = pid => projTypes(pid).map(typeName).join(", ");
+async function toggleProjType(pid, tid) {
+  const on = S.ptypes.get(pid)?.has(tid);
+  const q = on ? sb.from("project_type_links").delete().eq("project_id", pid).eq("type_id", tid)
+               : sb.from("project_type_links").insert({ project_id: pid, type_id: tid });
+  const { error } = await q;
+  if (error) { toast("Non sono riuscito a salvare la tipologia"); return false; }
+  if (!S.ptypes.has(pid)) S.ptypes.set(pid, new Set());
+  on ? S.ptypes.get(pid).delete(tid) : S.ptypes.get(pid).add(tid);
+  return true;
+}
+/* fila di pulsanti-tipologia da accendere e spegnere */
+function typeChips(pid, onChange) {
+  const box = document.createElement("span"); box.className = "tchips";
+  S.types.forEach(t => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "tchip"; b.textContent = t.name;
+    const paint = () => b.setAttribute("aria-pressed", S.ptypes.get(pid)?.has(t.id) ? "true" : "false");
+    paint();
+    b.onclick = async () => { b.disabled = true; if (await toggleProjType(pid, t.id)) { paint(); onChange && onChange(); } b.disabled = false; };
+    box.appendChild(b);
+  });
+  return box;
 }
 const clientById = id => S.clients.find(c => c.id === id);
 const projectById = id => S.projects.find(p => p.id === id);
@@ -172,9 +206,9 @@ function cpMatches(q, current) {
     if (c.archived && cpClient(current) !== c.id) return;
     const projs = S.projects.filter(p => p.client_id === c.id && (!p.archived || "p:" + p.id === current));
     const cm = !nq || norm(c.name).includes(nq);
-    const pm = projs.filter(p => cm || norm(p.name).includes(nq) || norm(c.name + " " + p.name).includes(nq));
+    const pm = projs.filter(p => cm || norm(p.name).includes(nq) || norm(c.name + " " + p.name).includes(nq) || (S.typesOn && norm(typeLabel(p.id)).includes(nq)));
     if (cm) out.push({ v: "c:" + c.id, main: c.name, sub: projs.length ? "tutto il cliente" : "", cid: c.id });
-    pm.forEach(p => out.push({ v: "p:" + p.id, main: p.name, sub: c.name, cid: c.id, proj: true }));
+    pm.forEach(p => out.push({ v: "p:" + p.id, main: p.name, sub: c.name + (S.typesOn && projTypes(p.id).length ? " · " + typeLabel(p.id) : ""), cid: c.id, proj: true }));
   });
   return out;
 }
@@ -478,6 +512,7 @@ function openQuickAdd(s, typed) {
   if (typed) $("qaClient").value = match ? String(match.id) : "__new";
   $("qaNewClientWrap").hidden = $("qaClient").value !== "__new";
   $("qaNewClient").value = typed && !match ? typed : ""; $("qaProject").value = ""; $("qaMsg").hidden = true;
+  $("qaTypes").innerHTML = S.types.map(t => '<label class="tpick"><input type="checkbox" value="' + t.id + '"><span>' + esc(t.name) + '</span></label>').join("");
   $("qa").hidden = false;
   ($("qaClient").value === "__new" && !typed ? $("qaNewClient") : $("qaProject")).focus();
 }
@@ -494,7 +529,10 @@ $("qaForm").addEventListener("submit", async e => {
       cid = (await addClient(name)).id;
     } else cid = Number(cid);
     let pid = null; const pn = $("qaProject").value.trim();
-    if (pn) pid = (await addProject(cid, pn)).id;
+    if (pn) {
+      pid = (await addProject(cid, pn)).id;
+      for (const cb of $("qaTypes").querySelectorAll("input:checked")) await toggleProjType(pid, Number(cb.value));
+    }
     $("qa").hidden = true;
     if (qaSlot === "range") cpSet($("rngCp"), pid ? "p:" + pid : "c:" + cid);
     else if (qaSlot !== null) setSlot(qaSlot, { client_id: cid, project_id: pid });
@@ -688,6 +726,9 @@ function fillFilterSelects() {
   $("fClient").innerHTML = '<option value="">Tutti i clienti</option><option value="none">Senza cliente</option>' +
     S.clients.map(x => '<option value="' + x.id + '">' + esc(x.name) + (x.archived ? " (archiviato)" : "") + '</option>').join("");
   $("fUser").value = u; $("fClient").value = c;
+  const t = $("fType").value;
+  $("fType").innerHTML = '<option value="">Tutte le tipologie</option>' + S.types.map(x => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join("") + '<option value="none">Senza tipologia</option>';
+  $("fType").value = [...$("fType").options].some(o => o.value === t) ? t : "";
   fillProjectFilter();
 }
 function fillProjectFilter() {
@@ -708,11 +749,12 @@ function initReport() {
   $("fUser").onchange = loadReport;
   $("fClient").onchange = () => { fillProjectFilter(); loadReport(); };
   $("fProject").onchange = loadReport;
+  $("fType").onchange = renderReport;
   $("fGroup").onchange = renderReport; $("fCross").onchange = renderReport;
   let tt; $("fText").oninput = () => { clearTimeout(tt); tt = setTimeout(renderReport, 250); };
   $("fReset").onclick = () => {
     $("fPreset").value = "month"; const r = presetRange("month"); $("fFrom").value = iso(r[0]); $("fTo").value = iso(r[1]);
-    $("fUser").value = ""; $("fClient").value = ""; fillProjectFilter(); $("fProject").value = ""; $("fText").value = "";
+    $("fUser").value = ""; $("fClient").value = ""; fillProjectFilter(); $("fProject").value = ""; $("fText").value = ""; $("fType").value = "";
     $("fGroup").value = "client"; $("fCross").value = "user"; loadReport();
   };
   $("moreRows").onclick = () => { R.shown += 100; renderDetail(); };
@@ -733,14 +775,15 @@ async function loadReport() {
 }
 function updateFilterSummary() {
   const parts = [$("fPreset").value === "custom" ? fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value) : $("fPreset").selectedOptions[0].text];
-  ["fUser", "fClient", "fProject"].forEach(id => { if ($(id).value) parts.push($(id).selectedOptions[0].text); });
+  ["fUser", "fClient", "fProject", "fType"].forEach(id => { if ($(id).value) parts.push($(id).selectedOptions[0].text); });
   if ($("fText").value.trim()) parts.push("“" + $("fText").value.trim() + "”");
   parts.push("per " + DIM[$("fGroup").value].label + ($("fCross").value ? " × " + DIM[$("fCross").value].label : ""));
   $("fSummary").textContent = parts.join(" · ");
 }
 function filteredRows() {
-  const q = $("fText").value.trim().toLowerCase();
-  return q ? R.rows.filter(r => (r.description || "").toLowerCase().includes(q)) : R.rows;
+  const q = $("fText").value.trim().toLowerCase(), t = S.typesOn ? $("fType").value : "";
+  return R.rows.filter(r => (!q || (r.description || "").toLowerCase().includes(q)) &&
+    (!t || (t === "none" ? !(r.project_id && projTypes(r.project_id).length) : !!(r.project_id && S.ptypes.get(r.project_id)?.has(Number(t))))));
 }
 const DIM = {
   client: { label: "cliente", key: r => String(r.client_id || 0), name: k => clientName(Number(k) || null), color: k => chip(Number(k) || null) },
@@ -751,9 +794,15 @@ const DIM = {
   day: { label: "giorno", key: r => r.day, name: k => G3[parse(k).getDay()] + " " + fmtDate(k), color: () => "var(--accent)", sort: true },
   week: { label: "settimana", key: r => { const [y, w] = isoWeek(parse(r.day)); return y + "-W" + pad(w); }, name: k => { const [y, w] = k.split("-W"); return "Settimana " + Number(w) + " · " + y; }, color: () => "var(--accent)", sort: true },
   month: { label: "mese", key: r => r.day.slice(0, 7), name: k => cap(MESI[Number(k.slice(5)) - 1]) + " " + k.slice(0, 4), color: () => "var(--accent)", sort: true },
+  type: { label: "tipologia", multi: true,
+    keys: r => { const t = r.project_id ? projTypes(r.project_id) : []; return t.length ? t.map(String) : ["0"]; },
+    name: k => k === "0" ? "Senza tipologia" : typeName(Number(k)),
+    color: k => k === "0" ? "var(--muted)" : "var(--c" + ((S.types.findIndex(t => String(t.id) === k) + 3) % 8) + ")" },
 };
+const dimKeys = (dim, r) => DIM[dim].keys ? DIM[dim].keys(r) : [DIM[dim].key(r)];
+const MULTI_NOTE = "I progetti con più tipologie contano per intero in ognuna: la somma delle tipologie può superare il totale.";
 function groupBy(rows, dim) {
-  const m = new Map(); rows.forEach(r => { const k = DIM[dim].key(r); m.set(k, (m.get(k) || 0) + 0.5); });
+  const m = new Map(); rows.forEach(r => dimKeys(dim, r).forEach(k => m.set(k, (m.get(k) || 0) + 0.5)));
   const list = [...m.entries()];
   if (DIM[dim].sort) list.sort((a, b) => a[0] < b[0] ? -1 : 1); else list.sort((a, b) => b[1] - a[1]);
   return list;
@@ -767,7 +816,8 @@ function renderReport() {
   $("rNone").textContent = fmtH(rows.filter(r => !r.client_id).length * 0.5);
 
   const g = $("fGroup").value, x = $("fCross").value;
-  $("groupLabel").textContent = "Ore per " + DIM[g].label + (["client", "user", "project"].includes(g) ? " · tocca una riga per filtrare" : "");
+  $("groupLabel").textContent = "Ore per " + DIM[g].label + (["client", "user", "project", "type"].includes(g) ? " · tocca una riga per filtrare" : "");
+  $("multiNote").hidden = !(g === "type" || x === "type"); $("multiNote").textContent = MULTI_NOTE;
   const box = $("repBars"); box.innerHTML = "";
   if (!rows.length) box.innerHTML = '<div class="empty">Nessuna lavorazione con questi filtri.</div>';
   const list = groupBy(rows, g), max = Math.max(1, ...list.map(l => l[1]));
@@ -780,12 +830,12 @@ function renderReport() {
     mw.hidden = false;
     $("matrixLabel").textContent = cap(DIM[g].label) + " × " + DIM[x].label + " (ore)";
     const cols = groupBy(rows, x).map(c => c[0]);
-    const cell = new Map(); rows.forEach(r => { const k = DIM[g].key(r) + "|" + DIM[x].key(r); cell.set(k, (cell.get(k) || 0) + .5); });
+    const cell = new Map(); rows.forEach(r => dimKeys(g, r).forEach(a => dimKeys(x, r).forEach(b => { const k = a + "|" + b; cell.set(k, (cell.get(k) || 0) + .5); })));
     let h = "<thead><tr><th>" + esc(cap(DIM[g].label)) + "</th>" + cols.map(c => '<th class="num">' + esc(DIM[x].name(c)) + "</th>").join("") + '<th class="num">Totale</th></tr></thead><tbody>';
     list.forEach(([k, t]) => {
       h += "<tr><td>" + esc(DIM[g].name(k)) + "</td>" + cols.map(c => { const v = cell.get(k + "|" + c) || 0; return '<td class="num' + (v ? "" : " zero") + '">' + (v ? fmtH(v).replace(" h", "") : "·") + "</td>"; }).join("") + '<td class="num tot">' + fmtH(t).replace(" h", "") + "</td></tr>";
     });
-    const colTot = cols.map(c => rows.filter(r => DIM[x].key(r) === c).length * .5);
+    const colMap = new Map(groupBy(rows, x)), colTot = cols.map(c => colMap.get(c) || 0);
     h += '<tr class="tot"><td>Totale</td>' + colTot.map(v => '<td class="num">' + fmtH(v).replace(" h", "") + "</td>").join("") + '<td class="num">' + fmtH(tot).replace(" h", "") + "</td></tr></tbody>";
     $("matrix").innerHTML = h;
   }
@@ -795,6 +845,7 @@ function renderReport() {
 function drillFor(dim, k) {
   if (dim === "client") return () => { $("fClient").value = k === "0" ? "none" : k; fillProjectFilter(); $("fGroup").value = "project"; loadReport(); };
   if (dim === "user") return () => { $("fUser").value = k; $("fGroup").value = "client"; if ($("fCross").value === "user") $("fCross").value = "project"; loadReport(); };
+  if (dim === "type") return () => { $("fType").value = k === "0" ? "none" : k; $("fGroup").value = "project"; renderReport(); };
   if (dim === "project" && k[0] === "p") return () => { const p = projectById(Number(k.slice(1))); $("fClient").value = String(p.client_id); fillProjectFilter(); $("fProject").value = String(p.id); $("fGroup").value = "user"; $("fCross").value = ""; loadReport(); };
   return null;
 }
@@ -804,7 +855,7 @@ function renderDetail() {
   let h = '<thead><tr><th>Data</th><th>Persona</th><th>Orario</th><th class="num">Ore</th><th>Cliente</th><th>Progetto</th><th>Descrizione</th></tr></thead><tbody>';
   b.slice(0, R.shown).forEach(r => {
     h += '<tr><td class="mono">' + fmtDate(r.day) + '</td><td class="nw">' + esc(profileById(r.user_id)?.full_name || "—") + '</td><td class="mono">' + slotTime(r.startSlot) + "–" + slotEnd(r.endSlot) +
-      '</td><td class="num">' + fmtH(r.hours).replace(" h", "") + '</td><td><span class="chip" style="--chip:' + chip(r.client_id) + '">' + esc(clientName(r.client_id)) + '</span></td><td>' + esc(projectName(r.project_id)) +
+      '</td><td class="num">' + fmtH(r.hours).replace(" h", "") + '</td><td><span class="chip" style="--chip:' + chip(r.client_id) + '">' + esc(clientName(r.client_id)) + '</span></td><td>' + esc(projectName(r.project_id)) + (S.typesOn && r.project_id && projTypes(r.project_id).length ? '<div class="tsmall">' + esc(typeLabel(r.project_id)) + '</div>' : "") +
       '</td><td class="desc">' + esc(r.description || "") + "</td></tr>";
   });
   $("detail").innerHTML = h + "</tbody>";
@@ -873,16 +924,17 @@ const personName = id => profileById(id)?.full_name || "Utente rimosso";
 const projKey = r => r.project_id ? "p" + r.project_id : "c" + (r.client_id || 0);
 function blockRow(b) {
   return [parse(b.day), GIORNI[parse(b.day).getDay()], personName(b.user_id), slotTime(b.startSlot), slotEnd(b.endSlot), b.hours,
-    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), b.description || ""];
+    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), b.project_id ? typeLabel(b.project_id) : "", b.description || ""];
 }
-const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Descrizione"];
-const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t"];
+const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Tipologie", "Descrizione"];
+const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t", "t"];
 function filterLines() {
   return [
     ["Periodo", fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value)],
     ["Persona", $("fUser").value ? personName($("fUser").value) : "Tutte"],
     ["Cliente", $("fClient").selectedOptions[0]?.text || "Tutti"],
     ["Progetto", $("fProject").selectedOptions[0]?.text || "Tutti"],
+    ["Tipologia", $("fType").value ? $("fType").selectedOptions[0].text : "Tutte"],
     ["Testo cercato", $("fText").value.trim() || "—"],
   ];
 }
@@ -902,20 +954,21 @@ function groupTable(sh, rows, dim, title) {
   const tot = rows.length * .5;
   sh.section(title || "Ore per " + DIM[dim].label);
   const body = groupBy(rows, dim).map(([k, h]) => [DIM[dim].name(k), h, pct(h, tot)]);
-  sh.table([cap(DIM[dim].label), "Ore", "%"], body, ["Totale", tot, 1], ["t", "h", "p"]);
+  sh.table([cap(DIM[dim].label), "Ore", "%"], body, DIM[dim].multi ? null : ["Totale", tot, 1], ["t", "h", "p"]);
+  if (DIM[dim].multi) { sh.rows.splice(sh.rows.length - 1, 0, [MULTI_NOTE]); sh.st.push([sh.rows.length - 2, "sub", 1]); }
 }
 function matrixTable(sh, rows, g, x, title) {
   const rl = groupBy(rows, g), cl = groupBy(rows, x).map(c => c[0]), tot = rows.length * .5;
-  const cell = new Map(); rows.forEach(r => { const k = DIM[g].key(r) + "|" + DIM[x].key(r); cell.set(k, (cell.get(k) || 0) + .5); });
+  const cell = new Map(); rows.forEach(r => dimKeys(g, r).forEach(a => dimKeys(x, r).forEach(b => { const k = a + "|" + b; cell.set(k, (cell.get(k) || 0) + .5); })));
   sh.section(title || cap(DIM[g].label) + " × " + DIM[x].label + " (ore)");
   const body = rl.map(([k, t]) => [DIM[g].name(k), ...cl.map(c => cell.get(k + "|" + c) || null), t]);
-  const total = ["Totale", ...cl.map(c => rows.filter(r => DIM[x].key(r) === c).length * .5), tot];
+  const colMap = new Map(groupBy(rows, x)), total = ["Totale", ...cl.map(c => colMap.get(c) || 0), tot];
   sh.table([cap(DIM[g].label) + " \\ " + DIM[x].label, ...cl.map(c => DIM[x].name(c)), "Totale"], body, total, ["t", ...cl.map(() => "h"), "h"]);
 }
 function detailTable(sh, rows, title, filter) {
   sh.section(title || "Dettaglio lavorazioni");
   const blocks = toBlocks(rows);
-  sh.table(DET_HEAD, blocks.map(blockRow), ["Totale", "", "", "", "", rows.length * .5, "", "", ""], DET_FMT, filter);
+  sh.table(DET_HEAD, blocks.map(blockRow), ["Totale", "", "", "", "", rows.length * .5, "", "", "", ""], DET_FMT, filter);
 }
 function safeSheetName(name, used) {
   let n = String(name).replace(/[\[\]:*?\/\\]/g, "-").trim() || "Foglio";
@@ -944,10 +997,12 @@ function buildFullWorkbook(X, rows) {
   const r0 = new Sheet("Riepilogo");
   headerBlock(r0, "Resoconto completo ore InPhoto Studio", rows);
   groupTable(r0, rows, "user"); groupTable(r0, rows, "client"); groupTable(r0, rows, "project");
+  if (S.typesOn && S.types.length) groupTable(r0, rows, "type");
   add(r0);
 
   if (rows.length) {
-    const m1 = new Sheet("Persone x progetti"); matrixTable(m1, rows, "project", "user", "Ore per progetto e persona"); matrixTable(m1, rows, "client", "user", "Ore per cliente e persona"); add(m1);
+    const m1 = new Sheet("Persone x progetti"); matrixTable(m1, rows, "project", "user", "Ore per progetto e persona"); matrixTable(m1, rows, "client", "user", "Ore per cliente e persona");
+    if (S.typesOn && S.types.length) matrixTable(m1, rows, "type", "user", "Ore per tipologia e persona"); add(m1);
     const m2 = new Sheet("Giorni x persone"); matrixTable(m2, rows, "day", "user", "Ore per giorno e persona"); matrixTable(m2, rows, "week", "user", "Ore per settimana e persona"); add(m2);
   }
   const det = new Sheet("Dettaglio"); detailTable(det, rows, "Tutte le lavorazioni (usa i filtri delle colonne)", true); add(det);
@@ -988,7 +1043,7 @@ async function exportExcel(kind) {
 function showSub(name) {
   document.querySelectorAll(".subtabs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.sub === name));
   ["cp", "team", "acc"].forEach(n => $("sub-" + n).hidden = n !== name);
-  if (name === "cp") renderClients();
+  if (name === "cp") { renderClients(); renderTypes(); }
   if (name === "team") renderTeam();
   if (name === "acc") renderAccount();
 }
@@ -1016,6 +1071,7 @@ function renderClients() {
       const pn = document.createElement("span"); pn.className = "pn"; pn.textContent = p.name;
       if (p.archived) pn.insertAdjacentHTML("beforeend", ' <span class="tag">archiviato</span>');
       r.appendChild(pn); r.appendChild(itemActs("projects", p));
+      if (S.typesOn && S.types.length) r.appendChild(typeChips(p.id));
       pl.appendChild(r);
     });
     el.appendChild(pl);
@@ -1027,6 +1083,42 @@ function renderClients() {
       el.appendChild(f);
     }
     box.appendChild(el);
+  });
+}
+/* elenco delle tipologie (solo amministratore) */
+function renderTypes() {
+  const box = $("tlist"); if (!box) return; box.innerHTML = "";
+  if (!S.typesOn) return;
+  if (!S.types.length) { box.innerHTML = '<div class="note">Nessuna tipologia. Aggiungine una qui sopra.</div>'; return; }
+  S.types.forEach(t => {
+    const row = document.createElement("div"); row.className = "trow";
+    const used = [...S.ptypes.values()].filter(set => set.has(t.id)).length;
+    const nm = document.createElement("span"); nm.className = "pn"; nm.textContent = t.name;
+    nm.insertAdjacentHTML("beforeend", ' <span class="tag">' + used + (used === 1 ? " progetto" : " progetti") + "</span>");
+    const a = document.createElement("span"); a.className = "acts";
+    const ren = document.createElement("button"); ren.type = "button"; ren.textContent = "Rinomina";
+    ren.onclick = () => {
+      const inp = document.createElement("input"); inp.value = t.name; inp.maxLength = 40;
+      inp.style.cssText = "border:1px solid var(--accent);border-radius:8px;height:36px;padding:0 10px;background:var(--bg);min-width:0;flex:1";
+      nm.replaceWith(inp); inp.focus(); inp.select();
+      const done = async ok => {
+        const v = inp.value.trim();
+        if (ok && v && v !== t.name) { const { error } = await sb.from("project_types").update({ name: v }).eq("id", t.id);
+          if (error) toast(error.code === "23505" ? "Esiste già una tipologia con questo nome" : "Non sono riuscito a rinominare"); else t.name = v; }
+        renderTypes(); renderClients();
+      };
+      inp.onkeydown = e => { if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); };
+      inp.onblur = () => done(true);
+    };
+    const del = document.createElement("button"); del.type = "button"; del.className = "del"; del.textContent = "Elimina";
+    del.onclick = async () => {
+      if (!del.classList.contains("confirm")) { del.classList.add("confirm"); del.textContent = used ? "Conferma: la tolgo da " + used + (used === 1 ? " progetto" : " progetti") : "Conferma"; setTimeout(() => { del.classList.remove("confirm"); del.textContent = "Elimina"; }, 4000); return; }
+      const { error } = await sb.from("project_types").delete().eq("id", t.id);
+      if (error) return toast("Eliminazione non riuscita");
+      S.types = S.types.filter(x => x.id !== t.id); S.ptypes.forEach(set => set.delete(t.id));
+      renderTypes(); renderClients(); toast("Tipologia eliminata");
+    };
+    a.append(ren, del); row.append(nm, a); box.appendChild(row);
   });
 }
 function itemActs(table, item) {
@@ -1065,6 +1157,12 @@ function itemActs(table, item) {
   a.append(ren, arc); if (isAdmin()) a.append(del); return a;
 }
 $("showArchived").onchange = renderClients;
+$("addTypeForm").addEventListener("submit", async e => {
+  e.preventDefault(); const v = $("newType").value.trim(); if (!v) return;
+  const { data, error } = await sb.from("project_types").insert({ name: v, sort: (Math.max(0, ...S.types.map(t => t.sort || 0)) + 1) }).select().single();
+  if (error) return toast(error.code === "23505" ? "Esiste già una tipologia con questo nome" : "Non sono riuscito ad aggiungere la tipologia");
+  S.types.push(data); $("newType").value = ""; renderTypes(); renderClients(); toast("Tipologia aggiunta");
+});
 $("addClientForm").addEventListener("submit", async e => {
   e.preventDefault(); const v = $("newClient").value.trim(); if (!v) return;
   try { await addClient(v); $("newClient").value = ""; renderClients(); toast("Cliente aggiunto"); } catch (err) { toast(err.message); }
