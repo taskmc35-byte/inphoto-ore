@@ -176,3 +176,7 @@ create index if not exists entries_type_idx on public.entries (type_id);
 insert into public.project_types (name, sort)
 select v.name, v.sort from (values ('Foto', 1), ('Video', 2), ('Social e Web', 3), ('Grafica', 4)) as v(name, sort)
 where not exists (select 1 from public.project_types);
+
+-- ---------- Tipo di cliente ----------
+alter table public.clients add column if not exists kind text check (kind in ('commerciale', 'privato'));
+grant update (kind) on public.clients to authenticated;

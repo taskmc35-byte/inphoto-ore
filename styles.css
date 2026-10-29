@@ -370,3 +370,10 @@ body.noscroll { overflow:hidden; }
 .ty-l { font-size:12px; font-family:var(--f-display); font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-right:4px; }
 .ty-l.warn { color:var(--warn); }
 @media (max-width:680px) { .row.hasty { grid-template-areas:"tm side" "txt txt" "ty ty"; } }
+
+/* Tipo cliente: commerciale / privato */
+.kchips { display:inline-flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.kchips.need .tchip { border-color:var(--warn); }
+.kline { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.addrow { flex-wrap:wrap; }
+.addrow input { flex:1 1 200px; }

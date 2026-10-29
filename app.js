@@ -136,19 +136,22 @@ sb.auth.onAuthStateChange(ev => { if (ev === "SIGNED_OUT" && !$("app").hidden) l
 
 /* ================= Clienti, progetti, persone ================= */
 async function loadLookups() {
-  const [c, p, u, t, l, ec] = await Promise.all([
+  const [c, p, u, t, l, ec, kc] = await Promise.all([
     sb.from("clients").select("*").order("name"),
     sb.from("projects").select("*").order("name"),
     sb.from("profiles").select("*").order("full_name"),
     sb.from("project_types").select("*").order("sort").order("name"),
     sb.from("project_type_links").select("project_id, type_id"),
     sb.from("entries").select("type_id").limit(1),
+    sb.from("clients").select("kind").limit(1),
   ]);
   if (c.error || p.error || u.error) toast("Non riesco a caricare clienti e progetti");
   S.clients = c.data || []; S.projects = p.data || []; S.profiles = u.data || [];
   // tipologie: se il database non è ancora aggiornato la funzione resta semplicemente nascosta
   S.typesOn = !t.error && !l.error;
   S.typeCol = S.typesOn && !ec.error;   // colonna "tipologia della fascia" presente nel database
+  S.kindOn = !kc.error;                 // tipo cliente (commerciale / privato) presente nel database
+  document.querySelectorAll("[data-kind]").forEach(el => el.hidden = !S.kindOn);
   S.types = S.typesOn ? t.data : [];
   S.ptypes = new Map();
   (S.typesOn ? l.data : []).forEach(x => { if (!S.ptypes.has(x.project_id)) S.ptypes.set(x.project_id, new Set()); S.ptypes.get(x.project_id).add(x.type_id); });
@@ -204,6 +207,24 @@ const chip = clientId => {
 };
 const clientName = id => id ? (clientById(id)?.name || "Cliente eliminato") : "Senza cliente";
 const projectName = id => id ? (projectById(id)?.name || "—") : "";
+const KINDS = { commerciale: "Commerciale", privato: "Privato" };
+const kindKey = cid => { if (!cid) return "0"; const k = clientById(cid)?.kind; return k || "nd"; };
+const kindName = k => k === "0" ? "Senza cliente" : k === "nd" ? "Tipo non indicato" : KINDS[k] || k;
+/* scelta Commerciale / Privato a pulsanti; value = "" finché non si sceglie */
+function kindPicker(cur, onPick) {
+  const box = document.createElement("span"); box.className = "kchips"; box.dataset.v = cur || "";
+  Object.entries(KINDS).forEach(([k, label]) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "tchip"; b.textContent = label;
+    b.setAttribute("aria-pressed", cur === k ? "true" : "false");
+    b.onclick = async () => {
+      if (onPick && !(await onPick(k))) return;
+      box.dataset.v = k; box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      box.classList.remove("need");
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
 
 /* ---------- Scelta cliente/progetto con ricerca ----------
    Valori: "" (nessuno), "c:ID" (cliente, tutto il cliente), "p:ID" (progetto). */
@@ -223,7 +244,7 @@ function cpMatches(q, current) {
     const projs = S.projects.filter(p => p.client_id === c.id && (!p.archived || "p:" + p.id === current));
     const cm = !nq || norm(c.name).includes(nq);
     const pm = projs.filter(p => cm || norm(p.name).includes(nq) || norm(c.name + " " + p.name).includes(nq) || (S.typesOn && norm(typeLabel(p.id)).includes(nq)));
-    if (cm) out.push({ v: "c:" + c.id, main: c.name, sub: projs.length ? "tutto il cliente" : "", cid: c.id });
+    if (cm) out.push({ v: "c:" + c.id, main: c.name, sub: [projs.length ? "tutto il cliente" : "", S.kindOn && c.kind ? KINDS[c.kind] : ""].filter(Boolean).join(" · "), cid: c.id });
     pm.forEach(p => out.push({ v: "p:" + p.id, main: p.name, sub: c.name + (S.typesOn && projTypes(p.id).length ? " · " + typeLabel(p.id) : ""), cid: c.id, proj: true }));
   });
   return out;
@@ -541,6 +562,8 @@ function openQuickAdd(s, typed) {
   if (typed) $("qaClient").value = match ? String(match.id) : "__new";
   $("qaNewClientWrap").hidden = $("qaClient").value !== "__new";
   $("qaNewClient").value = typed && !match ? typed : ""; $("qaProject").value = ""; $("qaMsg").hidden = true;
+  $("qaKind").replaceChildren(...kindPicker("").childNodes); $("qaKind").dataset.v = "";
+  $("qaKind").querySelectorAll("button").forEach(b => b.onclick = () => { $("qaKind").dataset.v = b.textContent === "Privato" ? "privato" : "commerciale"; $("qaKind").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); });
   $("qaTypes").innerHTML = S.types.map(t => '<label class="tpick"><input type="checkbox" value="' + t.id + '"><span>' + esc(t.name) + '</span></label>').join("");
   $("qa").hidden = false;
   ($("qaClient").value === "__new" && !typed ? $("qaNewClient") : $("qaProject")).focus();
@@ -555,7 +578,9 @@ $("qaForm").addEventListener("submit", async e => {
     let cid = $("qaClient").value;
     if (cid === "__new") {
       const name = $("qaNewClient").value.trim(); if (!name) return showErr("Scrivi il nome del cliente.");
-      cid = (await addClient(name)).id;
+      const kind = $("qaKind").dataset.v;
+      if (S.kindOn && !kind) return showErr("Indica se il cliente è commerciale o privato.");
+      cid = (await addClient(name, kind)).id;
     } else cid = Number(cid);
     let pid = null; const pn = $("qaProject").value.trim();
     if (pn) {
@@ -568,8 +593,9 @@ $("qaForm").addEventListener("submit", async e => {
     renderDay(); toast("Aggiunto");
   } catch (err) { showErr(err.message); }
 });
-async function addClient(name) {
-  const { data, error } = await sb.from("clients").insert({ name, created_by: S.me.id }).select().single();
+async function addClient(name, kind) {
+  const row = { name, created_by: S.me.id }; if (S.kindOn) row.kind = kind || null;
+  const { data, error } = await sb.from("clients").insert(row).select().single();
   if (error) throw new Error(error.code === "23505" ? "Esiste già un cliente con questo nome." : "Non sono riuscito ad aggiungere il cliente.");
   S.clients.push(data); S.clients.sort((a, b) => a.name.localeCompare(b.name, "it")); return data;
 }
@@ -789,12 +815,12 @@ function initReport() {
   $("fUser").onchange = loadReport;
   $("fClient").onchange = () => { fillProjectFilter(); loadReport(); };
   $("fProject").onchange = loadReport;
-  $("fType").onchange = renderReport;
+  $("fType").onchange = renderReport; $("fKind").onchange = renderReport;
   $("fGroup").onchange = renderReport; $("fCross").onchange = renderReport;
   let tt; $("fText").oninput = () => { clearTimeout(tt); tt = setTimeout(renderReport, 250); };
   $("fReset").onclick = () => {
     $("fPreset").value = "month"; const r = presetRange("month"); $("fFrom").value = iso(r[0]); $("fTo").value = iso(r[1]);
-    $("fUser").value = ""; $("fClient").value = ""; fillProjectFilter(); $("fProject").value = ""; $("fText").value = ""; $("fType").value = "";
+    $("fUser").value = ""; $("fClient").value = ""; fillProjectFilter(); $("fProject").value = ""; $("fText").value = ""; $("fType").value = ""; $("fKind").value = "";
     $("fGroup").value = "client"; $("fCross").value = "user"; loadReport();
   };
   $("moreRows").onclick = () => { R.shown += 100; renderDetail(); };
@@ -815,15 +841,16 @@ async function loadReport() {
 }
 function updateFilterSummary() {
   const parts = [$("fPreset").value === "custom" ? fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value) : $("fPreset").selectedOptions[0].text];
-  ["fUser", "fClient", "fProject", "fType"].forEach(id => { if ($(id).value) parts.push($(id).selectedOptions[0].text); });
+  ["fUser", "fKind", "fClient", "fProject", "fType"].forEach(id => { if ($(id).value) parts.push($(id).selectedOptions[0].text); });
   if ($("fText").value.trim()) parts.push("“" + $("fText").value.trim() + "”");
   parts.push("per " + DIM[$("fGroup").value].label + ($("fCross").value ? " × " + DIM[$("fCross").value].label : ""));
   $("fSummary").textContent = parts.join(" · ");
 }
 function filteredRows() {
-  const q = $("fText").value.trim().toLowerCase(), t = S.typesOn ? $("fType").value : "";
+  const q = $("fText").value.trim().toLowerCase(), t = S.typesOn ? $("fType").value : "", kf = S.kindOn ? $("fKind").value : "";
   return R.rows.filter(r => (!q || (r.description || "").toLowerCase().includes(q)) &&
-    (!t || (t === "none" ? slotType(r) === "0" : slotType(r) === t)));
+    (!t || (t === "none" ? slotType(r) === "0" : slotType(r) === t)) &&
+    (!kf || kindKey(r.client_id) === kf));
 }
 const DIM = {
   client: { label: "cliente", key: r => String(r.client_id || 0), name: k => clientName(Number(k) || null), color: k => chip(Number(k) || null) },
@@ -834,6 +861,7 @@ const DIM = {
   day: { label: "giorno", key: r => r.day, name: k => G3[parse(k).getDay()] + " " + fmtDate(k), color: () => "var(--accent)", sort: true },
   week: { label: "settimana", key: r => { const [y, w] = isoWeek(parse(r.day)); return y + "-W" + pad(w); }, name: k => { const [y, w] = k.split("-W"); return "Settimana " + Number(w) + " · " + y; }, color: () => "var(--accent)", sort: true },
   month: { label: "mese", key: r => r.day.slice(0, 7), name: k => cap(MESI[Number(k.slice(5)) - 1]) + " " + k.slice(0, 4), color: () => "var(--accent)", sort: true },
+  kind: { label: "tipo cliente", key: r => kindKey(r.client_id), name: kindName, color: k => k === "commerciale" ? "var(--c0)" : k === "privato" ? "var(--c5)" : "var(--muted)" },
   type: { label: "tipologia", key: r => slotType(r),
     name: k => k === "0" ? "Senza tipologia" : k === "nd" ? "Tipologia non indicata" : typeName(Number(k)),
     color: k => k === "0" || k === "nd" ? "var(--muted)" : "var(--c" + ((S.types.findIndex(t => String(t.id) === k) + 3) % 8) + ")" },
@@ -854,7 +882,7 @@ function renderReport() {
   $("rNone").textContent = fmtH(rows.filter(r => !r.client_id).length * 0.5);
 
   const g = $("fGroup").value, x = $("fCross").value;
-  $("groupLabel").textContent = "Ore per " + DIM[g].label + (["client", "user", "project", "type"].includes(g) ? " · tocca una riga per filtrare" : "");
+  $("groupLabel").textContent = "Ore per " + DIM[g].label + (["client", "user", "project", "type", "kind"].includes(g) ? " · tocca una riga per filtrare" : "");
   const nd = (g === "type" || x === "type") && rows.some(r => slotType(r) === "nd");
   $("multiNote").hidden = !nd; $("multiNote").textContent = "“Tipologia non indicata”: ore su progetti con più tipologie in cui la fascia non dice quale. Si sistemano dal registro di chi le ha compilate.";
   const box = $("repBars"); box.innerHTML = "";
@@ -884,6 +912,7 @@ function renderReport() {
 function drillFor(dim, k) {
   if (dim === "client") return () => { $("fClient").value = k === "0" ? "none" : k; fillProjectFilter(); $("fGroup").value = "project"; loadReport(); };
   if (dim === "user") return () => { $("fUser").value = k; $("fGroup").value = "client"; if ($("fCross").value === "user") $("fCross").value = "project"; loadReport(); };
+  if (dim === "kind") return () => { $("fKind").value = k === "0" ? "" : k; $("fGroup").value = "client"; renderReport(); };
   if (dim === "type") return () => { $("fType").value = k === "0" ? "none" : k; $("fGroup").value = "project"; renderReport(); };
   if (dim === "project" && k[0] === "p") return () => { const p = projectById(Number(k.slice(1))); $("fClient").value = String(p.client_id); fillProjectFilter(); $("fProject").value = String(p.id); $("fGroup").value = "user"; $("fCross").value = ""; loadReport(); };
   return null;
@@ -963,16 +992,17 @@ const personName = id => profileById(id)?.full_name || "Utente rimosso";
 const projKey = r => r.project_id ? "p" + r.project_id : "c" + (r.client_id || 0);
 function blockRow(b) {
   return [parse(b.day), GIORNI[parse(b.day).getDay()], personName(b.user_id), slotTime(b.startSlot), slotEnd(b.endSlot), b.hours,
-    clientName(b.client_id), b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), slotTypeName(b), b.description || ""];
+    clientName(b.client_id), b.client_id ? kindName(kindKey(b.client_id)) : "", b.project_id ? projectName(b.project_id) : (b.client_id ? "generale" : ""), slotTypeName(b), b.description || ""];
 }
-const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Progetto", "Tipologia", "Descrizione"];
-const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t", "t"];
+const DET_HEAD = ["Data", "Giorno", "Persona", "Inizio", "Fine", "Ore", "Cliente", "Tipo cliente", "Progetto", "Tipologia", "Descrizione"];
+const DET_FMT = ["d", "t", "t", "t", "t", "h", "t", "t", "t", "t", "t"];
 function filterLines() {
   return [
     ["Periodo", fmtDate($("fFrom").value) + " – " + fmtDate($("fTo").value)],
     ["Persona", $("fUser").value ? personName($("fUser").value) : "Tutte"],
     ["Cliente", $("fClient").selectedOptions[0]?.text || "Tutti"],
     ["Progetto", $("fProject").selectedOptions[0]?.text || "Tutti"],
+    ["Tipo cliente", $("fKind").value ? $("fKind").selectedOptions[0].text : "Tutti"],
     ["Tipologia", $("fType").value ? $("fType").selectedOptions[0].text : "Tutte"],
     ["Testo cercato", $("fText").value.trim() || "—"],
   ];
@@ -1006,7 +1036,7 @@ function matrixTable(sh, rows, g, x, title) {
 function detailTable(sh, rows, title, filter) {
   sh.section(title || "Dettaglio lavorazioni");
   const blocks = toBlocks(rows);
-  sh.table(DET_HEAD, blocks.map(blockRow), ["Totale", "", "", "", "", rows.length * .5, "", "", "", ""], DET_FMT, filter);
+  sh.table(DET_HEAD, blocks.map(blockRow), ["Totale", "", "", "", "", rows.length * .5, "", "", "", "", ""], DET_FMT, filter);
 }
 function safeSheetName(name, used) {
   let n = String(name).replace(/[\[\]:*?\/\\]/g, "-").trim() || "Foglio";
@@ -1035,6 +1065,7 @@ function buildFullWorkbook(X, rows) {
   const r0 = new Sheet("Riepilogo");
   headerBlock(r0, "Resoconto completo ore InPhoto Studio", rows);
   groupTable(r0, rows, "user"); groupTable(r0, rows, "client"); groupTable(r0, rows, "project");
+  if (S.kindOn) groupTable(r0, rows, "kind");
   if (S.typesOn && S.types.length) groupTable(r0, rows, "type");
   add(r0);
 
@@ -1102,7 +1133,19 @@ function renderClients() {
     if (c.archived) nm.insertAdjacentHTML("beforeend", ' <span class="tag">archiviato</span>');
     head.appendChild(nm);
     head.appendChild(itemActs("clients", c));
+    if (S.kindOn) {
+      const kp = kindPicker(c.kind, async k => {
+        const { error } = await sb.from("clients").update({ kind: k }).eq("id", c.id);
+        if (error) { toast("Non sono riuscito a salvare il tipo"); return false; }
+        c.kind = k; setTimeout(renderClients); return true;
+      });
+      if (!c.kind) kp.classList.add("need");
+      const wrap = document.createElement("div"); wrap.className = "kline";
+      wrap.innerHTML = '<span class="ty-l' + (c.kind ? "" : " warn") + '">' + (c.kind ? "Tipo" : "Indica il tipo") + "</span>";
+      wrap.appendChild(kp); el._kline = wrap;
+    }
     el.appendChild(head);
+    if (el._kline) el.appendChild(el._kline);
     const pl = document.createElement("div"); pl.className = "plist";
     S.projects.filter(p => p.client_id === c.id && (showArch || !p.archived)).forEach(p => {
       const r = document.createElement("div"); r.className = "prow" + (p.archived ? " arch" : "");
@@ -1195,6 +1238,9 @@ function itemActs(table, item) {
   a.append(ren, arc); if (isAdmin()) a.append(del); return a;
 }
 $("showArchived").onchange = renderClients;
+function resetNewKind() { const k = kindPicker(""); $("newKind").replaceChildren(...k.childNodes); $("newKind").dataset.v = "";
+  $("newKind").querySelectorAll("button").forEach(b => b.onclick = () => { $("newKind").dataset.v = b.textContent === "Privato" ? "privato" : "commerciale"; $("newKind").classList.remove("need"); $("newKind").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); }); }
+resetNewKind();
 $("addTypeForm").addEventListener("submit", async e => {
   e.preventDefault(); const v = $("newType").value.trim(); if (!v) return;
   const { data, error } = await sb.from("project_types").insert({ name: v, sort: (Math.max(0, ...S.types.map(t => t.sort || 0)) + 1) }).select().single();
@@ -1203,7 +1249,9 @@ $("addTypeForm").addEventListener("submit", async e => {
 });
 $("addClientForm").addEventListener("submit", async e => {
   e.preventDefault(); const v = $("newClient").value.trim(); if (!v) return;
-  try { await addClient(v); $("newClient").value = ""; renderClients(); toast("Cliente aggiunto"); } catch (err) { toast(err.message); }
+  const kind = $("newKind").dataset.v;
+  if (S.kindOn && !kind) { $("newKind").classList.add("need"); return toast("Indica se il cliente è commerciale o privato"); }
+  try { await addClient(v, kind); $("newClient").value = ""; resetNewKind(); renderClients(); toast("Cliente aggiunto"); } catch (err) { toast(err.message); }
 });
 
 /* ---------- Team ---------- */
