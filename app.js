@@ -136,17 +136,19 @@ sb.auth.onAuthStateChange(ev => { if (ev === "SIGNED_OUT" && !$("app").hidden) l
 
 /* ================= Clienti, progetti, persone ================= */
 async function loadLookups() {
-  const [c, p, u, t, l] = await Promise.all([
+  const [c, p, u, t, l, ec] = await Promise.all([
     sb.from("clients").select("*").order("name"),
     sb.from("projects").select("*").order("name"),
     sb.from("profiles").select("*").order("full_name"),
     sb.from("project_types").select("*").order("sort").order("name"),
     sb.from("project_type_links").select("project_id, type_id"),
+    sb.from("entries").select("type_id").limit(1),
   ]);
   if (c.error || p.error || u.error) toast("Non riesco a caricare clienti e progetti");
   S.clients = c.data || []; S.projects = p.data || []; S.profiles = u.data || [];
   // tipologie: se il database non è ancora aggiornato la funzione resta semplicemente nascosta
   S.typesOn = !t.error && !l.error;
+  S.typeCol = S.typesOn && !ec.error;   // colonna "tipologia della fascia" presente nel database
   S.types = S.typesOn ? t.data : [];
   S.ptypes = new Map();
   (S.typesOn ? l.data : []).forEach(x => { if (!S.ptypes.has(x.project_id)) S.ptypes.set(x.project_id, new Set()); S.ptypes.get(x.project_id).add(x.type_id); });
@@ -454,7 +456,7 @@ function paintRow(s, setText) {
 }
 /* scelta della tipologia nella fascia: compare solo se il progetto ne ha più di una */
 function paintTypes(s, e) {
-  const box = $("y" + s), list = S.typesOn && e && e.project_id && !e.is_lunch ? projTypes(e.project_id) : [];
+  const box = $("y" + s), list = S.typeCol && e && e.project_id && !e.is_lunch ? projTypes(e.project_id) : [];
   if (list.length < 2) { box.hidden = true; box.innerHTML = ""; $("grid").children[s].classList.remove("hasty"); return; }
   box.hidden = false; $("grid").children[s].classList.add("hasty");
   box.innerHTML = '<span class="ty-l' + (e.type_id && list.includes(e.type_id) ? "" : " warn") + '">' + (e.type_id && list.includes(e.type_id) ? "Tipologia" : "Scegli la tipologia") + "</span>" +
@@ -518,7 +520,7 @@ async function save(ds, s) {
   else {
     const row = { user_id: S.me.id, day: ds, slot: s, description: (e.description || "").slice(0, 500),
       client_id: e.client_id, project_id: e.project_id, is_lunch: !!e.is_lunch };
-    if (S.typesOn) row.type_id = e.is_lunch ? null : (e.type_id || null);
+    if (S.typeCol) row.type_id = e.is_lunch ? null : (e.type_id || null);
     ({ error } = await sb.from("entries").upsert(row, { onConflict: "user_id,day,slot" }));
   }
   inflight--;
@@ -607,7 +609,7 @@ cpAttach($("rngCp"), v => { resetRangeWarn(); if (v.startsWith("__new:")) openQu
 let RT = null;   // tipologia scelta nell'intervallo
 function paintRangeTypes() {
   const v = $("rngCp").dataset.v || "", pid = v.startsWith("p:") ? Number(v.slice(2)) : null;
-  const list = S.typesOn && pid ? projTypes(pid) : [], box = $("rngTypes");
+  const list = S.typeCol && pid ? projTypes(pid) : [], box = $("rngTypes");
   if (list.length < 2) { box.hidden = true; RT = list.length === 1 ? list[0] : null; return; }
   box.hidden = false;
   const chips = $("rngTypeChips");
@@ -642,7 +644,7 @@ async function applyRange(onlyEmpty) {
     if (onlyEmpty && filled(map[s])) continue;
     const key = ds + "|" + s; clearTimeout(pending.get(key)); pending.delete(key);
     const e = { user_id: S.me.id, day: ds, slot: s, description: txt, client_id, project_id, is_lunch: lunch };
-    if (S.typesOn) e.type_id = lunch || !project_id ? null : (RT && projTypes(project_id).includes(RT) ? RT : typeFor(project_id, null));
+    if (S.typeCol) e.type_id = lunch || !project_id ? null : (RT && projTypes(project_id).includes(RT) ? RT : typeFor(project_id, null));
     map[s] = e; rows.push(e);
   }
   $("rngOk").disabled = true;
@@ -668,7 +670,7 @@ function toRuns(list) {
 async function fetchEntries(from, to, f = {}) {
   const out = []; const size = 1000;
   for (let off = 0; ; off += size) {
-    let q = sb.from("entries").select("user_id, day, slot, description, client_id, project_id, is_lunch" + (S.typesOn ? ", type_id" : ""))
+    let q = sb.from("entries").select("user_id, day, slot, description, client_id, project_id, is_lunch" + (S.typeCol ? ", type_id" : ""))
       .gte("day", from).lte("day", to).eq("is_lunch", false);
     if (f.user) q = q.eq("user_id", f.user);
     if (f.client === "none") q = q.is("client_id", null); else if (f.client) q = q.eq("client_id", Number(f.client));
