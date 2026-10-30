@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script>try{var t=localStorage.getItem("inphoto-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="styles.css?v=20261029d">
+<link rel="stylesheet" href="styles.css?v=20261030a">
 </head>
 <body>
 
@@ -127,6 +127,7 @@
         <label class="field sm"><span>Persona</span><select id="fUser"></select></label>
         <label class="field sm"><span>Cliente</span><select id="fClient"></select></label>
         <label class="field sm"><span>Progetto</span><select id="fProject"></select></label>
+        <label class="field sm" id="fSubWrap" hidden><span>Sottoprogetto</span><select id="fSub"></select></label>
         <label class="field sm" data-types hidden><span>Tipologia</span><select id="fType"></select></label>
         <label class="field sm" data-kind hidden><span>Tipo cliente</span><select id="fKind"><option value="">Tutti</option><option value="commerciale">Commerciale</option><option value="privato">Privato</option><option value="nd">Non indicato</option></select></label>
       </div>
@@ -136,6 +137,7 @@
           <select id="fGroup">
             <option value="client">Cliente</option>
             <option value="project">Progetto</option>
+            <option value="sub">Sottoprogetto</option>
             <option value="user">Persona</option>
             <option value="day">Giorno</option>
             <option value="week">Settimana</option>
@@ -150,6 +152,7 @@
             <option value="user" selected>Persona</option>
             <option value="client">Cliente</option>
             <option value="project">Progetto</option>
+            <option value="sub">Sottoprogetto</option>
             <option value="type">Tipologia</option>
             <option value="kind">Tipo cliente</option>
           </select>
@@ -204,7 +207,7 @@
       <div class="clist" id="clist"></div>
       <div data-admin hidden><div class="card" data-types hidden>
         <h3>Tipologie dei progetti</h3>
-        <p class="note">Le tipologie si assegnano ai progetti qui sopra, toccando i pulsanti sotto ogni progetto. Un progetto può averne più di una.</p>
+        <p class="note">Le tipologie si assegnano ai progetti qui sopra, toccando i pulsanti sotto ogni progetto. Un progetto può averne più di una. Un sottoprogetto senza tipologie usa quelle del suo progetto.</p>
         <form class="addrow" id="addTypeForm">
           <input id="newType" placeholder="Nuova tipologia" maxlength="40" autocomplete="off" aria-label="Nome nuova tipologia">
           <button class="btn acc" type="submit">Aggiungi</button>
@@ -270,8 +273,9 @@
       <label class="field"><span>Nome del nuovo cliente</span><input id="qaNewClient" maxlength="80" autocomplete="off"></label>
       <div class="field" data-kind hidden><span>Tipo di cliente</span><span class="kchips" id="qaKind"></span></div>
     </div>
-    <label class="field"><span>Progetto (facoltativo)</span><input id="qaProject" maxlength="80" autocomplete="off" placeholder="es. Shooting catalogo autunno"></label>
-    <div class="field" data-types hidden><span>Tipologie del progetto (facoltative)</span><div class="tpicks" id="qaTypes"></div></div>
+    <label class="field" id="qaProjSelWrap" hidden><span>Progetto</span><select id="qaProjSel"></select></label>
+    <label class="field"><span id="qaProjectLbl">Progetto (facoltativo)</span><input id="qaProject" maxlength="80" autocomplete="off" placeholder="es. Shooting catalogo autunno"></label>
+    <div class="field" data-types hidden><span id="qaTypesLbl">Tipologie del progetto (facoltative)</span><div class="tpicks" id="qaTypes"></div></div>
     <p class="msg err" id="qaMsg" hidden></p>
     <div class="frow actions">
       <button class="btn" type="button" id="qaCancel">Annulla</button>
@@ -308,8 +312,8 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=20261029d"></script>
+<script src="config.js?v=20261030a"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261029d"></script>
+<script src="app.js?v=20261030a"></script>
 </body>
 </html>

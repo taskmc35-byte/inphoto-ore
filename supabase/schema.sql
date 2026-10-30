@@ -180,3 +180,57 @@ where not exists (select 1 from public.project_types);
 -- ---------- Tipo di cliente ----------
 alter table public.clients add column if not exists kind text check (kind in ('commerciale', 'privato'));
 grant update (kind) on public.clients to authenticated;
+
+-- ---------- Sottoprogetti (facoltativi, sempre legati a un progetto) ----------
+create table if not exists public.subprojects (
+  id          bigint generated always as identity primary key,
+  project_id  bigint not null references public.projects (id) on delete restrict,
+  name        text not null check (char_length(btrim(name)) between 1 and 80),
+  archived    boolean not null default false,
+  created_by  uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at  timestamptz not null default now(),
+  unique (id, project_id)
+);
+create unique index if not exists subprojects_name_unique on public.subprojects (project_id, lower(btrim(name)));
+create index if not exists subprojects_project_idx on public.subprojects (project_id);
+
+create table if not exists public.subproject_type_links (
+  subproject_id bigint not null references public.subprojects (id) on delete cascade,
+  type_id       bigint not null references public.project_types (id) on delete cascade,
+  primary key (subproject_id, type_id)
+);
+create index if not exists subproject_type_links_type_idx on public.subproject_type_links (type_id);
+
+alter table public.entries add column if not exists subproject_id bigint;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'entries_subproject_fk') then
+    alter table public.entries add constraint entries_subproject_fk
+      foreign key (subproject_id, project_id) references public.subprojects (id, project_id) on delete restrict;
+    alter table public.entries add constraint entries_subproject_needs_project
+      check (subproject_id is null or project_id is not null);
+  end if;
+end $$;
+create index if not exists entries_subproject_idx on public.entries (subproject_id);
+
+revoke all on public.subprojects, public.subproject_type_links from anon;
+grant select, insert, delete on public.subprojects to authenticated;
+grant update (name, archived) on public.subprojects to authenticated;
+grant select, insert, delete on public.subproject_type_links to authenticated;
+alter table public.subprojects enable row level security;
+alter table public.subproject_type_links enable row level security;
+
+drop policy if exists "membri leggono sottoprogetti" on public.subprojects;
+drop policy if exists "membri aggiungono sottoprogetti" on public.subprojects;
+drop policy if exists "membri modificano sottoprogetti" on public.subprojects;
+drop policy if exists "admin elimina sottoprogetti" on public.subprojects;
+create policy "membri leggono sottoprogetti" on public.subprojects for select to authenticated using ((select private.is_member()));
+create policy "membri aggiungono sottoprogetti" on public.subprojects for insert to authenticated with check ((select private.is_member()) and created_by = (select auth.uid()));
+create policy "membri modificano sottoprogetti" on public.subprojects for update to authenticated using ((select private.is_member())) with check ((select private.is_member()));
+create policy "admin elimina sottoprogetti" on public.subprojects for delete to authenticated using ((select private.is_admin()));
+
+drop policy if exists "membri leggono tipologie sottoprogetti" on public.subproject_type_links;
+drop policy if exists "membri assegnano tipologie sottoprogetti" on public.subproject_type_links;
+drop policy if exists "membri tolgono tipologie sottoprogetti" on public.subproject_type_links;
+create policy "membri leggono tipologie sottoprogetti" on public.subproject_type_links for select to authenticated using ((select private.is_member()));
+create policy "membri assegnano tipologie sottoprogetti" on public.subproject_type_links for insert to authenticated with check ((select private.is_member()));
+create policy "membri tolgono tipologie sottoprogetti" on public.subproject_type_links for delete to authenticated using ((select private.is_member()));

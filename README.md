@@ -1,6 +1,6 @@
 # InPhoto Ore
 
-Registro ore del team InPhoto Studio. Ogni persona ha il suo account e compila la propria giornata a fasce di 30 minuti (00:00–24:00), scegliendo cliente e progetto. L'amministratore vede il resoconto di tutti, lo filtra per periodo, persona, cliente, progetto o testo e lo esporta in Excel.
+Registro ore del team InPhoto Studio. Ogni persona ha il suo account e compila la propria giornata a fasce di 30 minuti (00:00–24:00), scegliendo cliente, progetto ed eventuale sottoprogetto (compare solo per i progetti che ne hanno). L'amministratore vede il resoconto di tutti, lo filtra per periodo, persona, cliente, progetto o testo e lo esporta in Excel.
 
 ## Ruoli
 
@@ -8,9 +8,9 @@ Registro ore del team InPhoto Studio. Ogni persona ha il suo account e compila l
 |---|---|---|
 | Compila le proprie fasce | ✓ | ✓ |
 | Riepilogo delle proprie ore | ✓ | ✓ |
-| Aggiunge, rinomina e archivia clienti e progetti, assegna le tipologie (Foto, Video…) | ✓ | ✓ |
+| Aggiunge, rinomina e archivia clienti, progetti e sottoprogetti, assegna le tipologie (Foto, Video…) | ✓ | ✓ |
 | Gestisce l'elenco delle tipologie | | ✓ |
-| Elimina clienti e progetti mai usati | | ✓ |
+| Elimina clienti, progetti e sottoprogetti mai usati | | ✓ |
 | Resoconto di tutto il team ed export Excel | | ✓ |
 | Crea account, reimposta password, disattiva o elimina persone (le ore restano) | | ✓ |
 
