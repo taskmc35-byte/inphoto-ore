@@ -386,3 +386,7 @@ body.noscroll { overflow:hidden; }
 .tinh { font-size:12px; color:var(--muted); align-self:center; }
 .cpopt.proj.subp { padding-left:52px; }
 .cpopt.proj.subp::before { left:36px; width:6px; height:6px; border-radius:1px; top:16px; opacity:.7; }
+
+/* nomi dei clienti sempre in maiuscolo mentre si scrivono */
+#newClient, #qaNewClient, input.upper { text-transform:uppercase; }
+#newClient::placeholder, #qaNewClient::placeholder { text-transform:none; }

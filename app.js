@@ -649,8 +649,10 @@ $("qaForm").addEventListener("submit", async e => {
     renderDay(); toast("Aggiunto");
   } catch (err) { showErr(err.message); }
 });
+/* i nomi dei clienti sono sempre in maiuscolo */
+const upName = v => String(v || "").trim().toLocaleUpperCase("it-IT");
 async function addClient(name, kind) {
-  const row = { name, created_by: S.me.id }; if (S.kindOn) row.kind = kind || null;
+  const row = { name: upName(name), created_by: S.me.id }; if (S.kindOn) row.kind = kind || null;
   const { data, error } = await sb.from("clients").insert(row).select().single();
   if (error) throw new Error(error.code === "23505" ? "Esiste già un cliente con questo nome." : "Non sono riuscito ad aggiungere il cliente.");
   S.clients.push(data); S.clients.sort((a, b) => a.name.localeCompare(b.name, "it")); return data;
@@ -1332,11 +1334,11 @@ function itemActs(table, item) {
   const ren = document.createElement("button"); ren.type = "button"; ren.textContent = "Rinomina";
   ren.onclick = () => {
     const holder = a.parentElement.querySelector(table === "clients" ? ".cname" : ".pn");
-    const inp = document.createElement("input"); inp.value = item.name; inp.maxLength = 80;
+    const inp = document.createElement("input"); inp.value = item.name; inp.maxLength = 80; if (table === "clients") inp.className = "upper";
     inp.style.cssText = "border:1px solid var(--accent);border-radius:8px;height:36px;padding:0 10px;background:var(--bg);min-width:0;flex:1";
     holder.replaceWith(inp); inp.focus(); inp.select();
     const done = async ok => {
-      const v = inp.value.trim();
+      const v = table === "clients" ? upName(inp.value) : inp.value.trim();
       if (ok && v && v !== item.name) {
         const { error } = await sb.from(table).update({ name: v }).eq("id", item.id);
         if (error) toast(error.code === "23505" ? "Nome già usato" : "Non sono riuscito a rinominare"); else item.name = v;

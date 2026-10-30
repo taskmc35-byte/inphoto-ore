@@ -234,3 +234,11 @@ drop policy if exists "membri tolgono tipologie sottoprogetti" on public.subproj
 create policy "membri leggono tipologie sottoprogetti" on public.subproject_type_links for select to authenticated using ((select private.is_member()));
 create policy "membri assegnano tipologie sottoprogetti" on public.subproject_type_links for insert to authenticated with check ((select private.is_member()));
 create policy "membri tolgono tipologie sottoprogetti" on public.subproject_type_links for delete to authenticated using ((select private.is_member()));
+
+-- ---------- Nomi dei clienti sempre in maiuscolo ----------
+create or replace function private.clients_upper_name()
+returns trigger language plpgsql set search_path = '' as $$
+begin new.name := upper(btrim(new.name)); return new; end; $$;
+drop trigger if exists clients_upper_name on public.clients;
+create trigger clients_upper_name before insert or update of name on public.clients
+  for each row execute function private.clients_upper_name();
