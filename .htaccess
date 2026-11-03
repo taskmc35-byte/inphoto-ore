@@ -1,0 +1,16 @@
+# InPhoto Ore — regole per l'hosting Apache/LiteSpeed (GitHub Pages ignora questo file)
+Options -Indexes
+
+# File del repository che non devono essere pubblicati
+<IfModule mod_alias.c>
+  RedirectMatch 404 /\.git
+  RedirectMatch 404 ^/supabase(/|$)
+  RedirectMatch 404 ^/README\.md$
+</IfModule>
+
+# La pagina, il service worker e il manifest vanno sempre ricontrollati: così gli aggiornamenti arrivano subito
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
