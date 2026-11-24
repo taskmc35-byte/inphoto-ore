@@ -13,13 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Carica i file via FTPS
+      - name: Carica i file via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
+          protocol: ftp   # il server non accetta FTPS (errore 534)
           server-dir: ./
           exclude: |
             **/.git*
