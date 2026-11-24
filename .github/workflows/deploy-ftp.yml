@@ -1,0 +1,29 @@
+# Pubblica l'app sull'hosting di inphotostudio.it (app-ore.inphotostudio.it) a ogni aggiornamento del ramo main.
+# Server, utente e password FTP sono nei "secrets" del repository: non stanno mai nel codice.
+name: Pubblica su app-ore.inphotostudio.it
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: deploy-ftp
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Carica i file via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          server-dir: ./
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            supabase/**
+            README.md
